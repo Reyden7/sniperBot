@@ -67,3 +67,24 @@ exploration de marché n'est autorisée avant un freeze V2 explicitement validé
 
 Le rapport machine complet est généré dans `data/reports/research-v2-*.json` et le
 rapport humain correspondant dans `data/reports/research-v2-*.md`.
+
+## Résultat du 8 septembre 2026
+
+Le replay a traité 17 941 326 ticks et produit 92 143 observations. À 300 secondes,
+OpportunityModel améliore la MAE MFE de la moyenne constante (7,731 contre 11,489
+points sur `MODEL_COMPARISON`, puis 7,624 contre 10,941 sur
+`INTERNAL_FREEZE_CHECK`). En revanche, DirectionModel reste proche du hasard : sur le
+contrôle interne, l'accuracy équilibrée vaut 0,513 pour la régression logistique et
+0,511 pour HGB, avec des expectancies exécutables négatives.
+
+Le gate principal préenregistré donne 6 candidats et −8,473 points nets simulés sur
+les folds 1–2. Sur le fold 3, il donne 10 candidats, +3,600 points exécutables mais
+−3,038 points nets BASE. Ces dix observations proviennent toutes de la semaine W36 et
+de la session Londres/New York ; les critères d'effectif, stabilité et coûts échouent.
+La conclusion est donc `V2_RESEARCH_REJECTED`. Aucun paramètre n'a été modifié après
+lecture du contrôle interne.
+
+Le HOLDOUT a été collecté et scellé sans évaluation : 11 605 421 ticks, du
+`2026-02-02T00:00:00.016Z` au `2026-06-09T23:59:50.985Z`. Le 1er février sans tick est
+cohérent avec le week-end, mais seule l'absence de données — et non une performance —
+a été constatée.

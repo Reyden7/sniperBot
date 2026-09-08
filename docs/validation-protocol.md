@@ -85,10 +85,10 @@ compilation et validation de l'execution appartiennent a la phase MQL5 ulterieur
 
 ## Resultat local du 8 septembre 2026
 
-- Python 3.14.6, pytest 9.1.1 : 200 tests reussis, dont les proprietes Hypothesis.
-- Ruff (lint et format) : succes ; mypy strict : succes sur les 48 modules Python.
+- Python 3.14.6, pytest 9.1.1 : 205 tests réussis, dont les propriétés Hypothesis.
+- Ruff (lint et format) : succès ; mypy strict : succès sur les 52 modules Python.
 - Installation `uv sync --offline --locked --extra mt5` : succes depuis le cache local.
-- Construction sdist et wheel 0.7.0 : succes ; archives verifiees sans cache, .venv,
+- Construction sdist et wheel 0.8.0 : succès ; archives vérifiées sans cache, .venv,
   donnees de marche, manifestes ou `.env` secret (`.env.example` est conserve).
 - SDK MetaTrader5 5.0.6180 reel : collecte EURUSD reussie sur un terminal connecte.
   Plage `[2026-09-08T07:46:00.000316Z, 2026-09-08T07:51:00.000316Z)` :

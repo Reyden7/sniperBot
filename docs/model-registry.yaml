@@ -15,6 +15,13 @@ models:
     deletable: false
     eligible_for_weight_or_threshold_optimization: false
   - model_id: SNIPER_RESEARCH_ENGINE_V2
-    status: RESEARCH_IN_PROGRESS
+    status: RESEARCH_REJECTED
+    decision: V2_RESEARCH_REJECTED
+    decision_scope: INTERNAL_FREEZE_CHECK
+    primary_report_predeclared:
+      horizon_seconds: 300
+      cost_scenario: BASE
+      minimum_move_to_cost_ratio: 1.5
+    post_freeze_check_parameter_changes: false
     sizing_authority: RISK_ENGINE_ONLY
     live_trading_enabled: false

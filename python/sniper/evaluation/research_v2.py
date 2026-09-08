@@ -574,8 +574,19 @@ def _scoped_model_metrics(
             name: {
                 **_classification_metrics(y_direction, prediction, direction_probabilities[name]),
                 **_direction_returns(scoped, horizon, prediction),
+                "mean_p_long": float(np.mean(direction_probabilities[name])),
+                "mean_p_short": float(1 - np.mean(direction_probabilities[name])),
             }
             for name, prediction in direction_predictions.items()
+        }
+        | {
+            "expected_directional_return_regression": {
+                **_regression_metrics(
+                    scoped[f"h{horizon}_market_return_points"].to_numpy().astype(float),
+                    values("signed_return_prediction"),
+                ),
+                "mean_prediction_points": float(np.mean(values("signed_return_prediction"))),
+            }
         },
     }
 
@@ -823,7 +834,7 @@ def _fit_horizon(
             ),
         },
     }
-    direction = {
+    direction: dict[str, Any] = {
         "label": "TERMINAL_MID_RETURN_POSITIVE",
         "random_baseline": {
             **_classification_metrics(
@@ -859,6 +870,18 @@ def _fit_horizon(
             signed_return_target[indices].astype(float), combined["signed_return_prediction"]
         ),
     }
+    for name, probabilities in (
+        ("random_baseline", np.full(len(indices), 0.5)),
+        ("momentum_baseline", momentum_prediction.astype(float)),
+        ("mean_reversion_baseline", mean_reversion_prediction.astype(float)),
+        ("logistic_regression", direction_probability),
+        ("hist_gradient_boosting", hgb_direction_probability),
+    ):
+        direction[name]["mean_p_long"] = float(np.mean(probabilities))
+        direction[name]["mean_p_short"] = float(1 - np.mean(probabilities))
+    direction["expected_directional_return_regression"]["mean_prediction_points"] = float(
+        np.mean(combined["signed_return_prediction"])
+    )
     assert final_x is not None and final_y_opportunity is not None and final_y_direction is not None
     explainability = {
         "opportunity_permutation_importance": _top_importance(
@@ -1284,6 +1307,14 @@ def render_research_v2_report(report: ResearchV2Report) -> str:
     def metric(value: object) -> str:
         return "N/A" if value is None else f"{float(cast(float, value)):.6f}"
 
+    def gate_row(result: GateResult) -> str:
+        return (
+            f"| {result.horizon_seconds}s | {result.candidates_count} | "
+            f"{metric(result.gross_expectancy_points)} | "
+            f"{metric(result.executable_expectancy_points)} | "
+            f"{metric(result.simulated_net_expectancy_points)} |"
+        )
+
     lines = [
         "# SNIPER Phase D.8 — Research Engine V2",
         "",
@@ -1369,6 +1400,54 @@ def render_research_v2_report(report: ResearchV2Report) -> str:
             f"{metric(gate.average_mae_points)} points",
             f"- Move/cost moyen : {metric(gate.average_move_to_cost_ratio)}",
             f"- Profitable : {metric(gate.percentage_profitable)}%",
+            "",
+            "## ExecutionGate BASE / 1.5 par horizon",
+            "",
+            "### MODEL_COMPARISON (folds 1–2)",
+            "",
+            "| Horizon | Candidats | Gross | Exécutable | Net simulé |",
+            "|---:|---:|---:|---:|---:|",
+            *[
+                gate_row(result)
+                for result in report.model_comparison_validation
+                if result.scenario == "BASE" and result.move_to_cost_threshold == 1.5
+            ],
+            "",
+            "### INTERNAL_FREEZE_CHECK (fold 3)",
+            "",
+            "| Horizon | Candidats | Gross | Exécutable | Net simulé |",
+            "|---:|---:|---:|---:|---:|",
+            *[
+                gate_row(result)
+                for result in report.internal_freeze_check
+                if result.scenario == "BASE" and result.move_to_cost_threshold == 1.5
+            ],
+            "",
+            "## Distribution primaire par semaine",
+            "",
+            "| Semaine | Candidats | Gross | Exécutable | Net simulé | Profitable |",
+            "|---|---:|---:|---:|---:|---:|",
+            *[
+                f"| {item['week']} | {item['candidates_count']} | "
+                f"{metric(item['gross_expectancy_points'])} | "
+                f"{metric(item['executable_expectancy_points'])} | "
+                f"{metric(item['simulated_net_expectancy_points'])} | "
+                f"{metric(item['percentage_profitable'])}% |"
+                for item in report.weekly_distribution
+            ],
+            "",
+            "## Distribution primaire par session",
+            "",
+            "| Session | Candidats | Gross | Exécutable | Net simulé | Profitable |",
+            "|---|---:|---:|---:|---:|---:|",
+            *[
+                f"| {item['session']} | {item['candidates_count']} | "
+                f"{metric(item['gross_expectancy_points'])} | "
+                f"{metric(item['executable_expectancy_points'])} | "
+                f"{metric(item['simulated_net_expectancy_points'])} | "
+                f"{metric(item['percentage_profitable'])}% |"
+                for item in report.session_distribution
+            ],
             "",
             "## Garde-fous",
             "",
