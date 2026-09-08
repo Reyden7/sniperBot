@@ -1,7 +1,7 @@
 # SNIPER
 
-Phases A à D.8 : fondation read-only, diagnostic broker 10 EUR, pipeline historique,
-backtester tick event-driven, baseline V1 rejetée et moteur de recherche V2 EURUSD.
+Phases A à D.9 : fondation read-only, diagnostic broker 10 EUR, pipeline historique,
+backtester tick event-driven et moteurs de recherche V2/V3 EURUSD rejetés.
 Aucun ordre live n'est implémenté.
 
 Installation avec Python stable 3.14.x et uv :
@@ -16,6 +16,7 @@ uv run --locked sniper signal --symbol EURUSD --as-of 2026-09-08T08:00:00Z --dat
 uv run --locked sniper evaluate-signals --symbol EURUSD --start 2026-06-01T00:00:00Z --end 2026-09-01T00:00:00Z --data data --json
 uv run --locked sniper validate-edge --symbol EURUSD --start 2026-06-10T00:00:00Z --end 2026-09-08T00:00:00Z --data data
 uv run --locked sniper research-v2 --data data
+uv run --locked sniper research-v3 --data data
 uv run --locked --extra mt5 sniper collect-holdout --output data/holdout-v2
 uv run --locked pytest
 uv run --locked ruff check .
@@ -203,3 +204,11 @@ est strictement temporel : les folds 1–2 servent à la comparaison, le fold 3 
 300 s / BASE / 1,5×. Le HOLDOUT antérieur est collectable dans une racine scellée mais
 n'est jamais évalué sans validation explicite du freeze. Voir
 [docs/research-v2.md](docs/research-v2.md).
+
+## Direction Research V3 (Phase D.9)
+
+V3 remplace la direction terminale UP/DOWN par deux modèles triple-barrière séparés :
+probabilité que le target LONG soit touché avant son stop et probabilité équivalente
+pour SHORT. Le MetaGate choisit LONG, SHORT ou SKIP en fonction d'un seuil et d'un edge
+BASE préenregistrés. Toutes les features restent causales et le HOLDOUT demeure scellé.
+Voir [docs/research-v3.md](docs/research-v3.md).

@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sniper"
-version = "0.8.0"
-description = "SNIPER: moteur de recherche V2 EURUSD sans trading live"
+version = "0.9.0"
+description = "SNIPER: recherche V3 triple-barrière EURUSD sans trading live"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
 dependencies = [

@@ -34,6 +34,7 @@ from sniper.domain.edge_validation import EdgeValidationReport
 from sniper.domain.evaluation import SignalEvaluationReport
 from sniper.domain.event_discovery import EventDiscoveryReport
 from sniper.domain.research_v2 import ResearchV2Report
+from sniper.domain.research_v3 import ResearchV3Report
 from sniper.domain.signal import SignalAnalysisReport
 from sniper.domain.trade import Side
 from sniper.evaluation.edge_validation import (
@@ -47,7 +48,12 @@ from sniper.evaluation.event_discovery import (
     EventDiscoveryConfig,
     render_event_discovery_report,
 )
+from sniper.evaluation.methodology_audit import (
+    build_methodology_audit,
+    render_methodology_audit,
+)
 from sniper.evaluation.research_v2 import ResearchV2Engine, render_research_v2_report
+from sniper.evaluation.research_v3 import ResearchV3Engine, render_research_v3_report
 from sniper.features.engine import FeatureEngine
 from sniper.risk.broker_compatibility import (
     BrokerCompatibilityReport,
@@ -1110,3 +1116,162 @@ def research_v2_command(
         typer.echo(report.model_dump_json(indent=2))
     else:
         print_research_v2_report(report, human_path)
+
+
+def print_research_v3_report(report: ResearchV3Report, human_path: Path) -> None:
+    primary = next(
+        item for item in report.combined_results if item.configuration_id == "B02_PRIMARY"
+    )
+    table = Table(title="SNIPER Phase D.9 — V3 DIRECTION RESEARCH ONLY", show_header=False)
+    table.add_column("Field")
+    table.add_column("Value")
+    for label, value in (
+        ("Conclusion", report.conclusion),
+        ("Observations", f"{report.performance.observations:,}"),
+        ("Directional events", f"{report.performance.labeled_side_events:,}"),
+        ("Primary configuration", primary.configuration_id),
+        ("Primary candidates", f"{primary.candidates_count:,}"),
+        ("Executable expectancy", primary.executable_expectancy_points),
+        ("BASE net expectancy", primary.base_net_expectancy_points),
+        ("STRESS net expectancy", primary.stress_net_expectancy_points),
+        ("Elapsed seconds", f"{report.performance.elapsed_seconds:.2f}"),
+        ("Human report", human_path.resolve()),
+        ("HOLDOUT", "SEALED / NOT OPENED / NOT EVALUATED"),
+        ("Phase E", "NOT STARTED"),
+        ("Live trading", "DISABLED"),
+    ):
+        table.add_row(label, str(value))
+    Console(markup=False).print(table)
+
+
+@app.command("research-v3")
+def research_v3_command(
+    data: Annotated[Path, typer.Option(help="Racine du dataset RESEARCH EURUSD.")] = Path("data"),
+    start: Annotated[
+        str, typer.Option(help="Début RESEARCH UTC verrouillé.")
+    ] = "2026-06-10T00:00:00Z",
+    end: Annotated[
+        str, typer.Option(help="Fin RESEARCH UTC exclusive verrouillée.")
+    ] = "2026-09-08T00:00:00Z",
+    json_output: Annotated[bool, typer.Option("--json", help="Afficher aussi le JSON.")] = False,
+) -> None:
+    """Étudier V3 en triple barrière sur RESEARCH, sans ouvrir le HOLDOUT."""
+    try:
+        start_utc, end_utc = parse_instant(start), parse_instant(end)
+        report = ResearchV3Engine().run(
+            data_root=data,
+            start_utc=start_utc,
+            end_utc=end_utc,
+        )
+        report_dir = data / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        stem = f"research-v3-{epoch_ms(start_utc)}-{epoch_ms(end_utc)}"
+        json_path = report_dir / f"{stem}.json"
+        human_path = report_dir / f"{stem}.md"
+        json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        human_path.write_text(render_research_v3_report(report), encoding="utf-8")
+    except (
+        ValidationError,
+        ValueError,
+        RuntimeError,
+        PermissionError,
+        InvalidOperation,
+        OSError,
+        AttributeError,
+        OverflowError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        message = safe_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"error": message, "holdout_opened": False}))
+        else:
+            typer.echo(f"SNIPER research-v3: {message}", err=True)
+        raise typer.Exit(2) from None
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        print_research_v3_report(report, human_path)
+
+
+@app.command("methodology-audit-d9a")
+def methodology_audit_d9a_command(
+    data: Annotated[Path, typer.Option(help="Racine du dataset RESEARCH EURUSD.")] = Path("data"),
+    start: Annotated[
+        str, typer.Option(help="Début RESEARCH UTC verrouillé.")
+    ] = "2026-06-10T00:00:00Z",
+    end: Annotated[
+        str, typer.Option(help="Fin RESEARCH UTC exclusive verrouillée.")
+    ] = "2026-09-08T00:00:00Z",
+    json_output: Annotated[bool, typer.Option("--json", help="Afficher aussi le JSON.")] = False,
+) -> None:
+    """Auditer V3 avec un walk-forward purgé, sans ouvrir le HOLDOUT."""
+    try:
+        start_utc, end_utc = parse_instant(start), parse_instant(end)
+        report_dir = data / "reports"
+        original_stem = f"research-v3-original-{epoch_ms(start_utc)}-{epoch_ms(end_utc)}"
+        original_path = report_dir / f"{original_stem}.json"
+        if not original_path.exists():
+            raise ValueError("Frozen V3_ORIGINAL report is required before D.9A")
+        original = ResearchV3Report.model_validate_json(original_path.read_text(encoding="utf-8"))
+        purged = ResearchV3Engine().run(
+            data_root=data,
+            start_utc=start_utc,
+            end_utc=end_utc,
+            purge_training_labels=True,
+        )
+        report_dir.mkdir(parents=True, exist_ok=True)
+        purged_stem = f"research-v3-purged-{epoch_ms(start_utc)}-{epoch_ms(end_utc)}"
+        purged_json_path = report_dir / f"{purged_stem}.json"
+        purged_human_path = report_dir / f"{purged_stem}.md"
+        purged_json_path.write_text(purged.model_dump_json(indent=2), encoding="utf-8")
+        purged_human_path.write_text(render_research_v3_report(purged), encoding="utf-8")
+        d10_path = Path("docs/d10-three-outcome-spec.md")
+        audit = build_methodology_audit(
+            original=original,
+            purged=purged,
+            original_report_path=original_path,
+            purged_report_path=purged_json_path,
+            d10_specification_path=d10_path,
+        )
+        audit_stem = f"methodology-audit-d9a-{epoch_ms(start_utc)}-{epoch_ms(end_utc)}"
+        audit_json_path = report_dir / f"{audit_stem}.json"
+        audit_human_path = report_dir / f"{audit_stem}.md"
+        audit_json_path.write_text(audit.model_dump_json(indent=2), encoding="utf-8")
+        audit_human_path.write_text(render_methodology_audit(audit), encoding="utf-8")
+    except (
+        ValidationError,
+        ValueError,
+        RuntimeError,
+        PermissionError,
+        InvalidOperation,
+        OSError,
+        AttributeError,
+        OverflowError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        message = safe_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"error": message, "holdout_opened": False}))
+        else:
+            typer.echo(f"SNIPER methodology-audit-d9a: {message}", err=True)
+        raise typer.Exit(2) from None
+    if json_output:
+        typer.echo(audit.model_dump_json(indent=2))
+    else:
+        table = Table(title="SNIPER Phase D.9A — METHODOLOGY AUDIT", show_header=False)
+        table.add_column("Field")
+        table.add_column("Value")
+        for label, value in (
+            ("V3 original", audit.original_verdict),
+            ("V3 purged", audit.purged_verdict),
+            ("Final V3 verdict", audit.final_v3_verdict),
+            ("Purged fold checks", len(audit.purge_audit)),
+            ("Report", audit_human_path.resolve()),
+            ("HOLDOUT", "SEALED / NOT OPENED / NOT EVALUATED"),
+            ("D.10", "SPECIFIED / NOT EXECUTED"),
+            ("Phase E / live", "NOT STARTED / DISABLED"),
+        ):
+            table.add_row(label, str(value))
+        Console(markup=False).print(table)

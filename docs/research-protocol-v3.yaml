@@ -1,0 +1,72 @@
+schema_version: 1
+registered_before_v3_results: true
+status: LOCKED_FOR_D9_RESEARCH
+dataset:
+  dataset_id: EURUSD_RESEARCH_20260610_20260908
+  role: RESEARCH
+  start_utc: 2026-06-10T00:00:00Z
+  end_utc_exclusive: 2026-09-08T00:00:00Z
+holdout:
+  dataset_id: EURUSD_HOLDOUT_PRE_20260610
+  state: SEALED
+  access_permitted: false
+sampling:
+  policy: FIRST_TICK_PER_ACTIVE_UTC_MINUTE
+walk_forward:
+  initial_train_fraction: 0.60
+  validation_folds: 4
+  validation_fraction_each: 0.10
+  random_split: false
+  preprocessing_fit_scope: TRAIN_ONLY
+models:
+  primary: REGULARIZED_LOGISTIC_REGRESSION
+  challengers: [PRIOR_BASELINE, HIST_GRADIENT_BOOSTING]
+  separate_long_short: true
+barrier_configurations:
+  - id: B01
+    stop_atr: 0.75
+    target_atr: 1.25
+    timeout_seconds: 180
+    minimum_target_to_base_cost: 1.5
+  - id: B02_PRIMARY
+    stop_atr: 1.0
+    target_atr: 2.0
+    timeout_seconds: 300
+    minimum_target_to_base_cost: 2.0
+  - id: B03
+    stop_atr: 1.0
+    target_atr: 2.5
+    timeout_seconds: 600
+    minimum_target_to_base_cost: 2.0
+  - id: B04
+    stop_atr: 1.5
+    target_atr: 3.0
+    timeout_seconds: 900
+    minimum_target_to_base_cost: 2.0
+primary_configuration: B02_PRIMARY
+meta_gate:
+  minimum_success_probability: 0.60
+  requires_conservative_expected_base_net_positive: true
+  both_sides_eligible_policy: HIGHEST_EXPECTED_BASE_NET
+  neither_side_eligible_policy: SKIP
+costs:
+  primary: BASE
+  scenarios: [OPTIMISTIC, BASE, STRESS]
+freeze_candidate_criteria:
+  minimum_candidates: 200
+  minimum_profit_factor_base: 1.10
+  minimum_active_weeks: 4
+  minimum_positive_week_fraction: 0.60
+  maximum_single_session_share: 0.60
+  requires_positive_executable_expectancy: true
+  requires_positive_base_net_expectancy: true
+  requires_nonnegative_stress_net_expectancy: true
+  minimum_pr_auc_lift_over_prior_each_side: 0.02
+post_result_changes_forbidden:
+  - primary_configuration
+  - primary_model
+  - probability_threshold
+  - cost_scenarios
+registered_hypotheses:
+  source: docs/research-hypotheses-v2.yaml
+  ids: [H001, H002, H003]

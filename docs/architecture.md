@@ -1,4 +1,4 @@
-# Architecture des phases A à D.8
+# Architecture des phases A à D.9
 
 Perimetre : fondation read-only, diagnostic broker et donnees historiques EURUSD.
 
@@ -105,3 +105,14 @@ Coûts simulés explicites ──────────┘
 Les folds walk-forward 1–2 servent à comparer les modèles. Le fold 3 est
 `INTERNAL_FREEZE_CHECK` et ne peut déclencher aucune adaptation. Le dataset HOLDOUT
 vit sous une racine séparée scellée et n'entre dans aucun chemin d'évaluation D.8.
+
+La D.9 remplace la cible directionnelle terminale par deux chemins de barrières :
+
+```text
+Features <= T -> LongOutcomeModel  ─┐
+Features <= T -> ShortOutcomeModel ─┼-> MetaGate -> LONG / SHORT / SKIP
+Bid/Ask futurs -> labels isolés ─────┘
+```
+
+Les labels futurs n'entrent jamais dans la matrice de features. Le MetaGate n'a aucune
+autorité de sizing ou d'exécution.

@@ -1,4 +1,4 @@
-# Validation des phases A à D.8
+# Validation des phases A à D.9
 
 Commandes reproductibles apres `uv sync --locked` :
 
@@ -69,6 +69,11 @@ quote à l'horizon exact, l'isolation des lignes du contrôle interne et le mani
 HOLDOUT scellé sans métrique de modèle. Les modèles et transformateurs sont ajustés
 uniquement sur le TRAIN antérieur à chaque fenêtre.
 
+Les tests Phase D.9 modifient les ticks futurs et prouvent l'invariance des nouvelles
+features à T. Ils contrôlent aussi les prix exécutables ASK/BID, l'ordre target/stop,
+le timeout, les quatre folds expanding TRAIN_ONLY et l'assemblage indépendant des
+probabilités LONG/SHORT dans le MetaGate.
+
 Un diagnostic reel se lance separement, sur Windows et un terminal MT5 connecte :
 
 ```text
@@ -85,10 +90,10 @@ compilation et validation de l'execution appartiennent a la phase MQL5 ulterieur
 
 ## Resultat local du 8 septembre 2026
 
-- Python 3.14.6, pytest 9.1.1 : 205 tests réussis, dont les propriétés Hypothesis.
-- Ruff (lint et format) : succès ; mypy strict : succès sur les 52 modules Python.
+- Python 3.14.6, pytest 9.1.1 : 209 tests réussis, dont les propriétés Hypothesis.
+- Ruff (lint et format) : succès ; mypy strict : succès sur les 54 modules Python.
 - Installation `uv sync --offline --locked --extra mt5` : succes depuis le cache local.
-- Construction sdist et wheel 0.8.0 : succès ; archives vérifiées sans cache, .venv,
+- Construction sdist et wheel 0.9.0 : succès ; archives vérifiées sans cache, .venv,
   donnees de marche, manifestes ou `.env` secret (`.env.example` est conserve).
 - SDK MetaTrader5 5.0.6180 reel : collecte EURUSD reussie sur un terminal connecte.
   Plage `[2026-09-08T07:46:00.000316Z, 2026-09-08T07:51:00.000316Z)` :

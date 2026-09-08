@@ -25,3 +25,17 @@ models:
     post_freeze_check_parameter_changes: false
     sizing_authority: RISK_ENGINE_ONLY
     live_trading_enabled: false
+  - model_id: SNIPER_DIRECTION_RESEARCH_V3
+    status: RESEARCH_REJECTED
+    decision: V3_RESEARCH_REJECTED
+    rejection_reason: PRIMARY_TRIPLE_BARRIER_GATE_NEGATIVE_AFTER_COSTS_AND_INSUFFICIENT_EVENTS
+    protocol: docs/research-protocol-v3.yaml
+    dataset_role: RESEARCH
+    holdout_state: SEALED
+    primary_configuration: B02_PRIMARY
+    primary_model: REGULARIZED_LOGISTIC_REGRESSION
+    primary_candidates: 2
+    primary_base_net_expectancy_points: -45.62501
+    post_result_protocol_changes: false
+    sizing_authority: RISK_ENGINE_ONLY
+    live_trading_enabled: false

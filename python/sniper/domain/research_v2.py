@@ -32,7 +32,7 @@ class TemporalFold(Model):
     train_observations: int = Field(ge=0)
     validation_observations: int = Field(ge=0)
     preprocessing_fit_scope: Literal["TRAIN_ONLY"] = "TRAIN_ONLY"
-    evaluation_role: Literal["MODEL_COMPARISON", "INTERNAL_FREEZE_CHECK"]
+    evaluation_role: Literal["MODEL_COMPARISON", "INTERNAL_FREEZE_CHECK", "RESEARCH_WALK_FORWARD"]
 
 
 class HorizonModelReport(Model):

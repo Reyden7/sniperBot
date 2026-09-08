@@ -125,6 +125,8 @@ def test_help_does_not_connect(monkeypatch):
     assert runner.invoke(cli.app, ["validate-edge", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["discover-candidate-events", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["research-v2", "--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["research-v3", "--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["methodology-audit-d9a", "--help"]).exit_code == 0
 
 
 def test_collect_ticks_cli_writes_parquet_and_json_report(connected_cli, api, tmp_path):
