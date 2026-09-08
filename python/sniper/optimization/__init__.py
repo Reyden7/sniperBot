@@ -1,0 +1,1 @@
+"""SNIPER optimization package."""
