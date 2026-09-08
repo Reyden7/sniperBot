@@ -1,4 +1,4 @@
-# Architecture des phases A a D.7
+# Architecture des phases A à D.8
 
 Perimetre : fondation read-only, diagnostic broker et donnees historiques EURUSD.
 
@@ -93,3 +93,15 @@ Seul `FIRST_CROSSING` représente un instant tradable ; `PEAK_SCORE` est rétros
 
 L'execution live MQL5, l'optimisation et le branchement au Risk Engine appartiennent
 aux phases suivantes.
+
+La D.8 conserve V1 comme baseline rejetée et découple la recherche :
+
+```text
+Features <= T -> OpportunityModel ─┐
+Features <= T -> DirectionModel ───┼-> ExecutionGate -> CANDIDATE ou REJECT
+Coûts simulés explicites ──────────┘
+```
+
+Les folds walk-forward 1–2 servent à comparer les modèles. Le fold 3 est
+`INTERNAL_FREEZE_CHECK` et ne peut déclencher aucune adaptation. Le dataset HOLDOUT
+vit sous une racine séparée scellée et n'entre dans aucun chemin d'évaluation D.8.

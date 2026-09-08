@@ -120,9 +120,11 @@ def test_help_does_not_connect(monkeypatch):
     assert runner.invoke(cli.app, ["broker-check", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["collect-ticks", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["collect-history", "--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["collect-holdout", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["evaluate-signals", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["validate-edge", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["discover-candidate-events", "--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["research-v2", "--help"]).exit_code == 0
 
 
 def test_collect_ticks_cli_writes_parquet_and_json_report(connected_cli, api, tmp_path):

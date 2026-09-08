@@ -1,8 +1,8 @@
 # SNIPER
 
-Phases A a D.7 : fondation read-only, diagnostic broker 10 EUR, pipeline historique,
-backtester tick event-driven, moteur de features/signaux EURUSD explicable et
-evaluation predictive hors echantillon. Aucun ordre live n'est implemente.
+Phases A à D.8 : fondation read-only, diagnostic broker 10 EUR, pipeline historique,
+backtester tick event-driven, baseline V1 rejetée et moteur de recherche V2 EURUSD.
+Aucun ordre live n'est implémenté.
 
 Installation avec Python stable 3.14.x et uv :
 
@@ -15,6 +15,8 @@ uv run --locked sniper backtest --symbol EURUSD --start 2026-09-08T07:46:00Z --e
 uv run --locked sniper signal --symbol EURUSD --as-of 2026-09-08T08:00:00Z --data data --json
 uv run --locked sniper evaluate-signals --symbol EURUSD --start 2026-06-01T00:00:00Z --end 2026-09-01T00:00:00Z --data data --json
 uv run --locked sniper validate-edge --symbol EURUSD --start 2026-06-10T00:00:00Z --end 2026-09-08T00:00:00Z --data data
+uv run --locked sniper research-v2 --data data
+uv run --locked --extra mt5 sniper collect-holdout --output data/holdout-v2
 uv run --locked pytest
 uv run --locked ruff check .
 uv run --locked ruff format --check .
@@ -191,3 +193,13 @@ sous 90, sur blocker ou changement de direction. Après un épisode, le détecte
 réarme qu'une fois sous 85. `FIRST_CROSSING` est le seul instant tradable ; `PEAK_SCORE`
 est rétrospectif et uniquement diagnostique. L'orientation inverse est mesurée sans
 modifier la stratégie. Voir [docs/event-discovery.md](docs/event-discovery.md).
+
+## Research Engine V2 (Phase D.8)
+
+V1 est `RESEARCH_REJECTED` et reste conservé avec ses hashes et rapports. V2 sépare
+OpportunityModel, DirectionModel et ExecutionGate, sans sizing ni exécution. Le split
+est strictement temporel : les folds 1–2 servent à la comparaison, le fold 3 est un
+`INTERNAL_FREEZE_CHECK` immuable. Le rapport principal est fixé avant résultats à
+300 s / BASE / 1,5×. Le HOLDOUT antérieur est collectable dans une racine scellée mais
+n'est jamais évalué sans validation explicite du freeze. Voir
+[docs/research-v2.md](docs/research-v2.md).

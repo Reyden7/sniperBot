@@ -1,4 +1,4 @@
-# Validation des phases A a D.7
+# Validation des phases A à D.8
 
 Commandes reproductibles apres `uv sync --locked` :
 
@@ -62,6 +62,12 @@ Les tests Phase D.7 verrouillent l'échantillonnage à une seconde et les seuils
 méthodologiques 90/85, vérifient qu'un retour 89→91 ne crée pas un nouvel épisode avant
 un passage sous 85, distinguent `FIRST_CROSSING` tradable de `PEAK_SCORE` rétrospectif,
 et contrôlent que la borne minute reste supérieure ou égale au score exact du moteur.
+
+Les tests Phase D.8 verrouillent les rôles `RESEARCH/VALIDATION/HOLDOUT/FORWARD`,
+l'ordre strict des folds, le rôle `INTERNAL_FREEZE_CHECK` du fold 3, l'inclusion de la
+quote à l'horizon exact, l'isolation des lignes du contrôle interne et le manifeste de
+HOLDOUT scellé sans métrique de modèle. Les modèles et transformateurs sont ajustés
+uniquement sur le TRAIN antérieur à chaque fenêtre.
 
 Un diagnostic reel se lance separement, sur Windows et un terminal MT5 connecte :
 

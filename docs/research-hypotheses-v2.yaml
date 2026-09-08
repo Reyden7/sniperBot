@@ -1,0 +1,54 @@
+schema_version: 1
+created_from: D7_EVENT_BASED_CANDIDATE_DISCOVERY
+status: RESEARCH_HYPOTHESES_NOT_VALIDATED
+research_dataset:
+  symbol: EURUSD
+  start_utc: 2026-06-10T00:00:00Z
+  end_utc_exclusive: 2026-09-08T00:00:00Z
+  role: RESEARCH
+holdout_policy:
+  status: SEALED_UNTIL_V2_FREEZE
+  may_influence_features_or_hyperparameters: false
+validation_protocol:
+  registered_before_final_results_were_read: true
+  model_comparison_windows: [1, 2]
+  internal_freeze_check_window: 3
+  internal_freeze_check_policy:
+    role: INTERNAL_FREEZE_CHECK
+    may_influence_features: false
+    may_influence_hyperparameters: false
+    may_influence_thresholds: false
+    may_influence_primary_horizon: false
+    may_influence_cost_scenarios: false
+  primary_report:
+    horizon_seconds: 300
+    cost_scenario: BASE
+    minimum_move_to_cost_ratio: 1.5
+  post_result_selection_forbidden: true
+hypotheses:
+  - id: H001
+    name: bearish_m1_pattern
+    source: D7
+    status: UNVALIDATED
+    condition:
+      m1_pattern: BEARISH
+    direction: ORIGINAL
+    horizons: [60, 180, 300, 600]
+  - id: H002
+    name: bullish_breakout_asia
+    source: D7
+    status: UNVALIDATED
+    condition:
+      breakout_retest: BULLISH
+      session: ASIA
+    direction: ORIGINAL
+    horizons: [180, 300, 600]
+  - id: H003
+    name: bearish_breakout_london_new_york
+    source: D7
+    status: UNVALIDATED
+    condition:
+      breakout_retest: BEARISH
+      session: LONDON_NEW_YORK
+    direction: ORIGINAL
+    horizons: [30, 60, 180, 300]

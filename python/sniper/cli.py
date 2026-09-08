@@ -25,6 +25,7 @@ from sniper.data.backtest_source import load_parquet_ticks
 from sniper.data.collector import DataQualityReport, collect_ticks
 from sniper.data.feature_source import load_parquet_bars
 from sniper.data.history import HistoryCollectionReport, collect_history
+from sniper.data.holdout import SealedHoldoutReport, validate_and_seal_holdout
 from sniper.data.mt5_client import MT5Client, MT5Error
 from sniper.data.parquet_store import ParquetStore
 from sniper.data.time import CollectionConfig, TimePolicy, epoch_ms, parse_instant
@@ -32,6 +33,7 @@ from sniper.domain.broker import VolumeConstraints
 from sniper.domain.edge_validation import EdgeValidationReport
 from sniper.domain.evaluation import SignalEvaluationReport
 from sniper.domain.event_discovery import EventDiscoveryReport
+from sniper.domain.research_v2 import ResearchV2Report
 from sniper.domain.signal import SignalAnalysisReport
 from sniper.domain.trade import Side
 from sniper.evaluation.edge_validation import (
@@ -45,6 +47,7 @@ from sniper.evaluation.event_discovery import (
     EventDiscoveryConfig,
     render_event_discovery_report,
 )
+from sniper.evaluation.research_v2 import ResearchV2Engine, render_research_v2_report
 from sniper.features.engine import FeatureEngine
 from sniper.risk.broker_compatibility import (
     BrokerCompatibilityReport,
@@ -390,6 +393,103 @@ def print_history_report(report: HistoryCollectionReport) -> None:
     ):
         table.add_row(label, str(value))
     Console(markup=False).print(table)
+
+
+@app.command("collect-holdout")
+def collect_holdout_command(
+    start: Annotated[str, typer.Option(help="Début UTC inclusif du HOLDOUT scellé.")] = (
+        "2026-02-01T00:00:00Z"
+    ),
+    end: Annotated[str, typer.Option(help="Fin UTC exclusive du HOLDOUT scellé.")] = (
+        "2026-06-10T00:00:00Z"
+    ),
+    output: Annotated[Path, typer.Option(help="Racine séparée du HOLDOUT scellé.")] = Path(
+        "data/holdout-v2"
+    ),
+    chunk_minutes: Annotated[int, typer.Option(help="Taille des requêtes MT5.")] = 60,
+    gap_seconds: Annotated[float, typer.Option(help="Seuil de trou entre deux ticks.")] = 60.0,
+    terminal_path: Annotated[str | None, typer.Option(help="Chemin du terminal MT5.")] = None,
+    json_output: Annotated[bool, typer.Option("--json", help="Rapport d'intégrité JSON.")] = False,
+) -> None:
+    """Collecter et sceller un HOLDOUT sans calculer aucune métrique de modèle."""
+    try:
+        start_utc, end_utc = parse_instant(start), parse_instant(end)
+        if start_utc >= end_utc:
+            raise ValueError("HOLDOUT range must be nonempty")
+        if output.resolve() == Path("data").resolve():
+            raise ValueError("HOLDOUT must use a separate output root")
+        existing_seal = output / ".holdout-sealed.json"
+        if existing_seal.exists():
+            previous = SealedHoldoutReport.model_validate_json(
+                existing_seal.read_text(encoding="utf-8")
+            )
+            if (
+                previous.requested_start_utc != start_utc
+                or previous.requested_end_utc_exclusive != end_utc
+            ):
+                raise PermissionError("sealed HOLDOUT range cannot be changed in place")
+        settings = Settings()
+        time_policy = TimePolicy(source_basis="UTC", local_timezone="Europe/Paris")
+        config = CollectionConfig(
+            time=time_policy,
+            chunk_minutes=chunk_minutes,
+            gap_threshold_seconds=gap_seconds,
+        )
+        with MT5Client(
+            path=terminal_path or settings.mt5_path,
+            timeout_ms=settings.mt5_timeout_ms,
+            time_policy=time_policy,
+        ) as client:
+            history = collect_history(
+                client,
+                ParquetStore(output),
+                start_utc,
+                end_utc,
+                config,
+                symbol="EURUSD",
+            )
+        report = validate_and_seal_holdout(output, history)
+    except (
+        MT5Error,
+        ValidationError,
+        ValueError,
+        InvalidOperation,
+        OSError,
+        PermissionError,
+        AttributeError,
+        OverflowError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        message = safe_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"error": message, "holdout_opened": False}))
+        else:
+            typer.echo(f"SNIPER collect-holdout: {message}", err=True)
+        raise typer.Exit(2) from None
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        table = Table(title="SNIPER V2 HOLDOUT — SEALED", show_header=False)
+        table.add_column("Field")
+        table.add_column("Value")
+        for label, value in (
+            (
+                "Requested UTC",
+                f"{report.requested_start_utc} -> {report.requested_end_utc_exclusive}",
+            ),
+            (
+                "Available UTC",
+                f"{report.available_start_utc} -> {report.available_end_utc_inclusive}",
+            ),
+            ("Ticks", report.ticks_collected),
+            ("Integrity", report.integrity_status),
+            ("Model metrics", "NOT COMPUTED"),
+            ("State", "SEALED"),
+            ("Live trading", "DISABLED"),
+        ):
+            table.add_row(label, str(value))
+        Console(markup=False).print(table)
 
 
 def print_backtest_report(result: BacktestResult) -> None:
@@ -938,3 +1038,75 @@ def discover_candidate_events_command(
         typer.echo(report.model_dump_json(indent=2))
     else:
         print_event_discovery_report(report, human_path)
+
+
+def print_research_v2_report(report: ResearchV2Report, human_path: Path) -> None:
+    table = Table(title="SNIPER Phase D.8 — RESEARCH V2 ONLY", show_header=False)
+    table.add_column("Field")
+    table.add_column("Value")
+    gate = report.selected_base_gate
+    for label, value in (
+        ("Conclusion", report.conclusion),
+        ("Observations", f"{report.performance.observations:,}"),
+        ("Primary horizon", f"{gate.horizon_seconds}s"),
+        ("Primary candidates", f"{gate.candidates_count:,}"),
+        ("Executable expectancy", gate.executable_expectancy_points),
+        ("Simulated net expectancy", gate.simulated_net_expectancy_points),
+        ("Elapsed seconds", f"{report.performance.elapsed_seconds:.2f}"),
+        ("Human report", human_path.resolve()),
+        ("HOLDOUT opened/evaluated", "NO / NO"),
+        ("Phase E", "NOT STARTED"),
+        ("Live trading", "DISABLED"),
+    ):
+        table.add_row(label, str(value))
+    Console(markup=False).print(table)
+
+
+@app.command("research-v2")
+def research_v2_command(
+    data: Annotated[Path, typer.Option(help="Racine du dataset RESEARCH EURUSD.")] = Path("data"),
+    start: Annotated[
+        str, typer.Option(help="Debut RESEARCH UTC verrouille.")
+    ] = "2026-06-10T00:00:00Z",
+    end: Annotated[
+        str, typer.Option(help="Fin RESEARCH UTC exclusive verrouillee.")
+    ] = "2026-09-08T00:00:00Z",
+    json_output: Annotated[bool, typer.Option("--json", help="Afficher aussi le JSON.")] = False,
+) -> None:
+    """Entraîner et valider V2 sur RESEARCH uniquement, jamais sur HOLDOUT."""
+    try:
+        start_utc, end_utc = parse_instant(start), parse_instant(end)
+        report = ResearchV2Engine().run(
+            data_root=data,
+            start_utc=start_utc,
+            end_utc=end_utc,
+        )
+        report_dir = data / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        stem = f"research-v2-{epoch_ms(start_utc)}-{epoch_ms(end_utc)}"
+        json_path = report_dir / f"{stem}.json"
+        human_path = report_dir / f"{stem}.md"
+        json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        human_path.write_text(render_research_v2_report(report), encoding="utf-8")
+    except (
+        ValidationError,
+        ValueError,
+        RuntimeError,
+        PermissionError,
+        InvalidOperation,
+        OSError,
+        AttributeError,
+        OverflowError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        message = safe_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"error": message, "live_trading_enabled": False}))
+        else:
+            typer.echo(f"SNIPER research-v2: {message}", err=True)
+        raise typer.Exit(2) from None
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        print_research_v2_report(report, human_path)
