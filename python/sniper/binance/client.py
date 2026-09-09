@@ -115,7 +115,7 @@ class BinanceReadOnlyClient:
         if path not in self.READ_ONLY_PATHS:
             raise BinanceApiError("Endpoint is not permitted by the read-only adapter")
         query_params = {key: value for key, value in (params or {}).items() if value is not None}
-        headers = {"User-Agent": "SNIPER/0.15.0 read-only"}
+        headers = {"User-Agent": "SNIPER/0.16.0 read-only"}
         if signed:
             if not self.settings.authenticated:
                 raise BinanceApiError("Binance account credentials are not configured")

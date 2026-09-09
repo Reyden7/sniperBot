@@ -16,6 +16,32 @@ models:
     dynamic_filters: [PRICE_FILTER, LOT_SIZE, MARKET_LOT_SIZE, MIN_NOTIONAL, NOTIONAL]
     websocket_streams: [aggTrade, bookTicker, kline_1m, kline_5m, kline_15m]
     forex_dependency: NONE
+  - model_id: SNIPER_BINANCE_SPOT_STRATEGY_V1
+    kind: DETERMINISTIC_HISTORICAL_RESEARCH
+    status: INSUFFICIENT_EVIDENCE
+    decision: BINANCE_STRATEGY_INSUFFICIENT_EVIDENCE
+    market: BINANCE_SPOT_LONG_ONLY
+    protocol: docs/binance-qualification-protocol.md
+    research_period_utc: ["2026-06-10T00:00:00Z", "2026-09-08T00:00:00Z"]
+    symbols: [BTCEUR, ETHEUR, SOLEUR, XRPEUR]
+    timeframes: [M15_REGIME, M5_STRATEGY, M1_ENTRY]
+    setups: [MOMENTUM_PULLBACK, BREAKOUT_RETEST, RANGE_MEAN_REVERSION]
+    primary_capital_eur: 500
+    base_fee_source: BINANCE_ACCOUNT_API
+    base_maker_fee: 0.001
+    base_taker_fee: 0.001
+    bars_m1: 518400
+    bars_m5: 103680
+    signal_observations: 5086
+    primary_trades: 392
+    primary_net_return_pct: -27.29489891093320
+    primary_profit_factor: 0.2067976055291448
+    primary_active_weeks: 14
+    primary_positive_week_ratio: 0.0
+    historical_bid_ask_coverage: false
+    sizing_authority: BINANCE_RISK_ENGINE_RESEARCH_ONLY
+    order_endpoints_present: false
+    live_trading_enabled: false
   - model_id: SNIPER_SIGNAL_ENGINE_V1
     status: RESEARCH_REJECTED
     retained_as: HISTORICAL_BASELINE

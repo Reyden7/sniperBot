@@ -23,6 +23,7 @@ from sniper.binance.market_data import (
     normalize_kline,
     normalize_rest_agg_trade,
 )
+from sniper.binance.service import account_permission_status
 from sniper.binance.settings import BinanceSettings
 from sniper.binance.storage import BinanceParquetStore
 from sniper.binance.universe import CryptoUniverseScanner
@@ -71,6 +72,15 @@ def test_binance_settings_are_read_only_and_require_complete_credentials(monkeyp
     monkeypatch.setenv("BINANCE_API_KEY", "only-key")
     with pytest.raises(ValidationError, match="BINANCE_API_SECRET"):
         BinanceSettings(_env_file=None)
+
+
+def test_account_capabilities_are_never_reported_as_api_key_permissions():
+    status = account_permission_status({"canTrade": True, "canWithdraw": True})
+    assert status["ACCOUNT_CAN_TRADE"] is True
+    assert status["ACCOUNT_CAN_WITHDRAW"] is True
+    assert status["API_KEY_TRADING_PERMISSION_CONFIRMED"] is None
+    assert status["API_KEY_WITHDRAW_PERMISSION_CONFIRMED"] is None
+    assert status["API_KEY_PERMISSION_STATUS"] == "REQUIRES_MANUAL_BINANCE_UI_CONFIRMATION"
 
 
 def test_dynamic_filters_round_quantity_and_enforce_notional():
@@ -294,7 +304,72 @@ def test_universe_selects_most_liquid_quote_dynamically_without_account():
     scanner = CryptoUniverseScanner(FakeMarketClient(), BinanceSettings(_env_file=None))
     candidates, quotes, account, problems = scanner.scan()
     assert [item.symbol for item in candidates] == ["BTCUSDC", "ETHUSDC"]
-    assert quotes == ("USDC", "XYZ")
+    assert quotes == ("USDC",)
     assert account is None
     assert all(item.fee_source == "CONFIGURED_FALLBACK" for item in candidates)
+    assert all(item.available_quote_balance is None for item in candidates)
+    assert all(item.tick_size == Decimal("0.01") for item in candidates)
     assert "CONFIGURED_NONZERO_FEE_FALLBACK_USED" in problems
+
+
+class FakeAuthenticatedMultiQuoteClient(FakeMarketClient):
+    def exchange_info(self):
+        return {
+            "symbols": [
+                symbol_payload("BTCEUR", "BTC", "EUR"),
+                symbol_payload("BTCUSDC", "BTC", "USDC"),
+            ]
+        }
+
+    def book_tickers(self):
+        return [
+            {
+                "symbol": symbol,
+                "bidPrice": "99.9",
+                "bidQty": "10",
+                "askPrice": "100.1",
+                "askQty": "10",
+            }
+            for symbol in ("BTCEUR", "BTCUSDC")
+        ]
+
+    def ticker_24h(self):
+        return [
+            {"symbol": symbol, "volume": "10000", "quoteVolume": "1000000", "count": 1000}
+            for symbol in ("BTCEUR", "BTCUSDC")
+        ]
+
+    def account_information(self):
+        return {
+            "accountType": "SPOT",
+            "canTrade": True,
+            "canWithdraw": True,
+            "balances": [
+                {"asset": "EUR", "free": "100", "locked": "0"},
+                {"asset": "USDC", "free": "0", "locked": "0"},
+            ],
+        }
+
+    def trade_fees(self):
+        return [
+            {"symbol": symbol, "makerCommission": "0.001", "takerCommission": "0.001"}
+            for symbol in ("BTCEUR", "BTCUSDC")
+        ]
+
+
+def test_authenticated_universe_keeps_all_quotes_and_reports_balance_compatibility(monkeypatch):
+    monkeypatch.setenv("BINANCE_API_KEY", "test-key")
+    monkeypatch.setenv("BINANCE_API_SECRET", "test-secret")
+    settings = BinanceSettings(_env_file=None)
+    candidates, quotes, account, problems = CryptoUniverseScanner(
+        FakeAuthenticatedMultiQuoteClient(), settings
+    ).scan()
+    by_symbol = {item.symbol: item for item in candidates}
+    assert quotes == ("EUR", "USDC")
+    assert account is not None
+    assert by_symbol["BTCEUR"].available_quote_balance == Decimal("100")
+    assert by_symbol["BTCEUR"].compatible_with_available_balance is True
+    assert by_symbol["BTCUSDC"].available_quote_balance is None
+    assert by_symbol["BTCUSDC"].compatible_with_available_balance is False
+    assert all(item.fee_source == "BINANCE_ACCOUNT_API" for item in candidates)
+    assert "CONFIGURED_NONZERO_FEE_FALLBACK_USED" not in problems

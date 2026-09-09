@@ -22,6 +22,7 @@ from sniper.backtest.execution_model import (
 from sniper.backtest.slippage import FixedSlippage, NoSlippage, RandomSlippage, SlippageModel
 from sniper.binance.client import BinanceApiError, BinanceReadOnlyClient
 from sniper.binance.models import UniverseCandidate
+from sniper.binance.second_delivery import render_second_delivery, run_second_delivery
 from sniper.binance.service import (
     build_binance_check,
     collect_binance_market_data,
@@ -973,6 +974,17 @@ def binance_check_command(
             ("Connection", report.connection["public_rest"]),
             ("Mode", report.mode),
             ("Account authenticated", report.account["authenticated"]),
+            ("ACCOUNT_CAN_TRADE", report.account["ACCOUNT_CAN_TRADE"]),
+            ("ACCOUNT_CAN_WITHDRAW", report.account["ACCOUNT_CAN_WITHDRAW"]),
+            (
+                "API_KEY_TRADING_PERMISSION_CONFIRMED",
+                report.account["API_KEY_TRADING_PERMISSION_CONFIRMED"],
+            ),
+            (
+                "API_KEY_WITHDRAW_PERMISSION_CONFIRMED",
+                report.account["API_KEY_WITHDRAW_PERMISSION_CONFIRMED"],
+            ),
+            ("API_KEY_PERMISSION_STATUS", report.account["API_KEY_PERMISSION_STATUS"]),
             ("Tradable priority symbols", len(report.symbols)),
             ("Quote assets", ", ".join(report.quote_assets_available)),
             ("Problems", len(report.problems)),
@@ -1076,6 +1088,68 @@ def crypto_collect_command(
             ("Duplicates skipped", report.duplicates_skipped),
             ("Problems", ", ".join(report.problems) or "NONE"),
             ("Report", report_path.resolve()),
+            ("Order endpoints / LIVE", "ABSENT / DISABLED"),
+        ):
+            table.add_row(label, str(value))
+        Console(markup=False).print(table)
+
+
+@app.command("crypto-backtest")
+def crypto_backtest_command(
+    data: Annotated[Path, typer.Option(help="Racine des données SNIPER.")] = Path("data"),
+    start: Annotated[
+        str, typer.Option(help="Début UTC du protocole Binance gelé.")
+    ] = "2026-06-10T00:00:00Z",
+    end: Annotated[
+        str, typer.Option(help="Fin UTC exclusive du protocole Binance gelé.")
+    ] = "2026-09-08T00:00:00Z",
+    collect_history: Annotated[bool, typer.Option("--collect-history/--existing-history")] = True,
+    json_output: Annotated[bool, typer.Option("--json", help="Afficher le JSON.")] = False,
+) -> None:
+    """Collecter puis qualifier la stratégie Spot gelée, sans aucune route d'ordre."""
+    try:
+        settings = BinanceSettings()
+        report, trades = run_second_delivery(
+            client=BinanceReadOnlyClient(settings),
+            settings=settings,
+            data_root=data,
+            start_utc=parse_instant(start),
+            end_utc=parse_instant(end),
+            collect_history=collect_history,
+        )
+        report_dir = data / "binance" / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        json_path = report_dir / "second-deliverable.json"
+        human_path = Path("docs/binance-second-deliverable.md")
+        trades_path = data / "binance" / "backtests" / "primary-500-eur-base-trades.json"
+        trades_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        human_path.write_text(render_second_delivery(report), encoding="utf-8")
+        trades_path.write_text(
+            json.dumps([trade.model_dump(mode="json") for trade in trades], indent=2),
+            encoding="utf-8",
+        )
+    except (ValidationError, BinanceApiError, ValueError, OSError, KeyError, TypeError) as exc:
+        message = safe_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"error": message, "live_trading_enabled": False}))
+        else:
+            typer.echo(f"SNIPER crypto-backtest: {message}", err=True)
+        raise typer.Exit(2) from None
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        table = Table(title="SNIPER Binance Spot — Historical Qualification", show_header=False)
+        table.add_column("Field")
+        table.add_column("Value")
+        for label, value in (
+            ("Verdict", report.verdict),
+            ("Symbols", ", ".join(report.symbols)),
+            ("M1 bars", f"{report.bars_m1:,}"),
+            ("M5 bars", f"{report.bars_m5:,}"),
+            ("Signals", f"{report.signal_observations:,}"),
+            ("Fee source", report.account_fee_source),
+            ("Human report", human_path.resolve()),
             ("Order endpoints / LIVE", "ABSENT / DISABLED"),
         ):
             table.add_row(label, str(value))

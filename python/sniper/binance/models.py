@@ -122,10 +122,10 @@ class UniverseCandidate(Model):
     quantity_step: Decimal
     minimum_notional: Decimal
     minimum_order_at_ask_quote: Decimal
-    tick_size: Decimal
-    available_quote_balance: Decimal | None
-    compatible_with_available_balance: bool | None
-    ranking_components: dict[str, Decimal]
+    tick_size: Decimal | None = Field(default=None, gt=0)
+    available_quote_balance: Decimal | None = None
+    compatible_with_available_balance: bool | None = None
+    ranking_components: dict[str, Decimal] = Field(default_factory=dict)
     reasons: tuple[str, ...]
 
 

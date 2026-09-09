@@ -24,6 +24,25 @@ from sniper.binance.storage import BinanceParquetStore, StorageWrite
 from sniper.binance.universe import CryptoUniverseScanner
 
 
+def account_permission_status(account: dict[str, Any] | None) -> dict[str, Any]:
+    """Separate account capabilities from API-key permissions Binance does not attest."""
+    if account is None:
+        return {
+            "ACCOUNT_CAN_TRADE": None,
+            "ACCOUNT_CAN_WITHDRAW": None,
+            "API_KEY_TRADING_PERMISSION_CONFIRMED": None,
+            "API_KEY_WITHDRAW_PERMISSION_CONFIRMED": None,
+            "API_KEY_PERMISSION_STATUS": "UNAVAILABLE_WITHOUT_API_CREDENTIALS",
+        }
+    return {
+        "ACCOUNT_CAN_TRADE": account.get("canTrade"),
+        "ACCOUNT_CAN_WITHDRAW": account.get("canWithdraw"),
+        "API_KEY_TRADING_PERMISSION_CONFIRMED": None,
+        "API_KEY_WITHDRAW_PERMISSION_CONFIRMED": None,
+        "API_KEY_PERMISSION_STATUS": "REQUIRES_MANUAL_BINANCE_UI_CONFIRMATION",
+    }
+
+
 def build_binance_check(
     client: BinanceReadOnlyClient, settings: BinanceSettings
 ) -> BinanceCheckReport:
@@ -46,11 +65,7 @@ def build_binance_check(
             "permissions": [],
             "balances": [],
             "fee_status": "CONFIGURED_NONZERO_FALLBACK_NOT_ACCOUNT_FEE",
-            "ACCOUNT_CAN_TRADE": None,
-            "ACCOUNT_CAN_WITHDRAW": None,
-            "API_KEY_TRADING_PERMISSION_CONFIRMED": None,
-            "API_KEY_WITHDRAW_PERMISSION_CONFIRMED": None,
-            "API_KEY_PERMISSION_STATUS": "UNAVAILABLE_WITHOUT_API_CREDENTIALS",
+            **account_permission_status(None),
         }
     else:
         account_summary = {
@@ -68,13 +83,7 @@ def build_binance_check(
                 if float(item["free"]) > 0 or float(item["locked"]) > 0
             ],
             "fee_status": "ACCOUNT_SPECIFIC_WHEN_SYMBOL_REPORT_SAYS_BINANCE_ACCOUNT_API",
-            "ACCOUNT_CAN_TRADE": account.get("canTrade"),
-            "ACCOUNT_CAN_WITHDRAW": account.get("canWithdraw"),
-            "API_KEY_TRADING_PERMISSION_CONFIRMED": None,
-            "API_KEY_WITHDRAW_PERMISSION_CONFIRMED": None,
-            "API_KEY_PERMISSION_STATUS": (
-                "REQUIRES_MANUAL_BINANCE_UI_CONFIRMATION"
-            ),
+            **account_permission_status(account),
         }
     return BinanceCheckReport(
         mode=settings.trading_mode,

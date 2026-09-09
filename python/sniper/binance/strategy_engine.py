@@ -214,7 +214,12 @@ class BinanceStrategyEngine:
             previous_broke_out = previous.close > breakout_level
             retested = current.low <= breakout_level * 1.0015 and current.close > breakout_level
             breakout_volume = previous.quote_volume >= volume_median[index - 1] * 1.20
-            if previous_broke_out and retested and breakout_volume and regime != MarketRegime.TREND_DOWN:
+            if (
+                previous_broke_out
+                and retested
+                and breakout_volume
+                and regime != MarketRegime.TREND_DOWN
+            ):
                 stop = min(current.low, breakout_level - atr[index] * 0.35)
                 signal = StrategySignal(
                     current.symbol,
@@ -230,7 +235,9 @@ class BinanceStrategyEngine:
                     ("M5_BREAKOUT_CONFIRMED", "M5_RETEST_HELD", "M1_MOMENTUM_POSITIVE"),
                 )
             pullback = current.low <= fast[index] * 1.001 and current.close > fast[index]
-            resumed = current.close > previous.close and volumes[index] >= volume_median[index] * 0.80
+            resumed = (
+                current.close > previous.close and volumes[index] >= volume_median[index] * 0.80
+            )
             if signal is None and regime == MarketRegime.TREND_UP and fast[index] > slow[index]:
                 if pullback and resumed:
                     stop = min(lows[index - 2 : index + 1]) - atr[index] * 0.10
@@ -262,7 +269,10 @@ class BinanceStrategyEngine:
                         min(previous.low, current.low) - atr[index] * 0.25,
                         target,
                         atr[index],
-                        min(0.80, 0.55 + abs(previous.close - lower_band) / max(atr[index], 1e-12) / 10),
+                        min(
+                            0.80,
+                            0.55 + abs(previous.close - lower_band) / max(atr[index], 1e-12) / 10,
+                        ),
                         ("M15_RANGE", "M5_LOWER_EXTENSION", "M5_REENTRY", "M1_MOMENTUM_POSITIVE"),
                     )
             if signal is not None and signal.invalid_level < signal.entry_reference:

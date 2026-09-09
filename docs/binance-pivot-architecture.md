@@ -84,9 +84,18 @@ clés d'événement sont dédupliquées dans le batch et contre les parts exista
 timestamps canoniques sont UTC. Les données dérivées futures iront dans
 `data/binance/features`, sans modifier les données brutes.
 
-## Étapes ultérieures non commencées
+## Deuxième livrable de recherche
 
-M15/M5/M1 Feature Engine, setups, OpportunityEngine qualifié, Risk Engine,
-DailyPerformanceEngine, PositionManager, exécution Spot, backtester, paper/testnet et
-qualification LIVE restent hors de ce premier livrable. Leur ajout ne pourra pas
-réintroduire martingale, grid, averaging down, trade forcé ou prix mid d'exécution.
+Le runtime contient désormais un moteur causal M15/M5/M1, les trois setups gelés
+Momentum Pullback, Breakout Retest et Range Mean Reversion, `EconomicTradeFilter`,
+`OpportunityEngine`, `BinanceRiskEngine`, `DailyPerformanceEngine` et un replay Spot
+long-only. Les M5/M15 sont reconstruits depuis les M1 closes. Le Risk Engine reste la
+seule autorité de sizing ; les soldes réels n'entrent pas dans la qualification.
+
+Le backtester entre à Ask, sort à Bid, ajoute slippage et frais, applique les filtres
+Binance, impose une position et six trades maximum, et recalcule le PnL depuis les prix
+exécutés. Faute de Bid/Ask historique officiel complet, le spread du snapshot initial est
+un proxy explicitement bloquant pour une qualification paper.
+
+PositionManager, ordre Spot, paper/testnet et LIVE restent hors périmètre. Aucun ajout ne
+peut réintroduire martingale, grid, averaging down, trade forcé ou prix mid d'exécution.

@@ -115,8 +115,15 @@ Le premier lot Binance teste le refus double de LIVE, les filtres Spot dynamique
 l'arrondi Decimal, le minimum notionnel, les frais/spread/slippage aller-retour, la
 normalisation UTC des trades/book/klines, la composition des cinq flux WebSocket,
 l'idempotence Parquet, les limites HTTP 418/429, la liste blanche REST et la sélection
-dynamique de la quote par volume de base. Les tests ne contactent pas Binance ; la
+dynamique des quotes éligibles. Les tests ne contactent pas Binance ; la
 connexion publique réelle et la collecte bornée constituent un contrôle séparé.
+
+Le deuxième lot Binance teste la séparation entre capacités du compte et permissions
+de clé, l'univers EUR/USDC/USDT complet, la compatibilité du solde quote, la causalité
+M15/M5/M1, les trois setups, le filtre économique, le classement sans sizing, le Risk
+Engine, les états journaliers UTC, l'invariant d'une position et le recalcul du PnL depuis
+les prix exécutés. Le replay officiel contient 518 400 M1 et 103 680 M5 sur quatre paires
+EUR pendant 90 jours ; l'absence de Bid/Ask historique reste explicitement bloquante.
 
 Un diagnostic reel se lance separement, sur Windows et un terminal MT5 connecte :
 
@@ -134,10 +141,10 @@ compilation et validation de l'execution appartiennent a la phase MQL5 ulterieur
 
 ## Resultat local du 9 septembre 2026
 
-- Python 3.14.6, pytest 9.1.1 : 254 tests réussis, dont les propriétés Hypothesis.
-- Ruff (lint et format) : succès ; mypy strict : succès sur les 76 modules Python.
+- Python 3.14.6, pytest 9.1.1 : 262 tests réussis, dont les propriétés Hypothesis.
+- Ruff (lint et format) : succès ; mypy strict : succès sur les 82 modules Python.
 - Installation `uv sync --offline --locked --extra mt5` : succes depuis le cache local.
-- Construction sdist et wheel 0.15.0 : succès ; archives vérifiées sans cache, .venv,
+- Construction sdist et wheel 0.16.0 : succès ; archives vérifiées sans cache, .venv,
   donnees de marche, manifestes ou `.env` secret (`.env.example` est conserve).
 - SDK MetaTrader5 5.0.6180 reel : collecte EURUSD reussie sur un terminal connecte.
   Plage `[2026-09-08T07:46:00.000316Z, 2026-09-08T07:51:00.000316Z)` :

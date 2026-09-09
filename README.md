@@ -1,8 +1,9 @@
 # SNIPER
 
-La mission active est désormais un scanner autonome multi-crypto **Binance Spot**, centré
-sur M5 et l'espérance nette après frais. Le premier livrable reste strictement
-`READ_ONLY` : Futures, margin, levier, sizing, endpoint d'ordre et LIVE sont absents.
+La mission active est désormais un moteur de recherche multi-crypto **Binance Spot**,
+centré sur M5 et l'espérance nette après frais. Le deuxième livrable reste strictement
+`READ_ONLY` : Futures, margin, levier, endpoint d'ordre et LIVE sont absents. Le sizing
+présent est exclusivement simulé par le Risk Engine du backtester.
 
 Les recherches Forex EURUSD A à D.14 sont terminées et conservées comme archive en
 lecture seule. Elles ne doivent plus être optimisées ni utilisées comme stratégie active.
@@ -14,6 +15,7 @@ uv sync --locked
 uv run --locked sniper binance-check
 uv run --locked sniper crypto-universe
 uv run --locked sniper crypto-collect --duration-seconds 10 --data data
+uv run --locked sniper crypto-backtest --existing-history --data data
 ```
 
 Sans clés, les endpoints publics fonctionnent et les frais sont un fallback configurable,
@@ -21,7 +23,9 @@ non nul et explicitement marqué comme non spécifique au compte. Avec
 `BINANCE_API_KEY` et `BINANCE_API_SECRET`, `binance-check` lit le compte et les frais
 réels via des endpoints signés de lecture. Les secrets ne sont jamais écrits.
 
-Voir [l'architecture du pivot](docs/binance-pivot-architecture.md).
+Voir [l'architecture du pivot](docs/binance-pivot-architecture.md), le
+[protocole gelé](docs/binance-qualification-protocol.md) et le
+[rapport du deuxième livrable](docs/binance-second-deliverable.md).
 
 ## Archive Forex EURUSD
 
