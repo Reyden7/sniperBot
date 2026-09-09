@@ -1,0 +1,150 @@
+schema_version: 1
+phase: D.14
+title: SNIPER Economic Feasibility and Bottleneck Decomposition Audit
+registered_before_first_d14_result: true
+status: LOCKED_DIAGNOSTIC_ONLY
+dataset:
+  id: EURUSD_RESEARCH_20260610_20260908
+  role: RESEARCH_DEVELOPMENT_OOF_DIAGNOSTIC
+  start_utc: 2026-06-10T00:00:00Z
+  end_utc_exclusive: 2026-09-08T00:00:00Z
+  d13_report: data/reports/research-d13.json
+  d13_report_sha256: f0117538f287e3c6b472f95cadcdd7e368495a94bf780a197b1fc9259e8a448a
+  d13_oof_predictions: data/evaluations/research-d13-20260610T000000Z-20260908T000000Z/outer-oof-predictions.parquet
+  d13_oof_predictions_sha256: aadc3eaaaf046acbd9a566aecd11fb22abaf599acef71bca3909ad1a563e4ab0
+  d12_events: data/evaluations/research-d12-20260610T000000Z-20260908T000000Z/events.parquet
+  d12_events_sha256: a23531949d3ea9857223caf911405d48aafcd3dbbd70f78f86a561b7a3bf9c0f
+  d13_engine_sha256: bcbc7f485b3759735f63937537b9da16d4aa9a4543d9c4e4380b01e38aad3484
+  d13_protocol_sha256: 1f55213c8c503551b53f0086dbf6b4707c487209ad982bdbbd8e03598b81fd8f
+  hash_verification_required_before_data_read: true
+holdout:
+  id: EURUSD_HOLDOUT_PRE_20260610
+  root: data/holdout-v2
+  state: SEALED
+  access_permitted: false
+scope:
+  diagnostic_only: true
+  model_training: FORBIDDEN
+  model_parameter_changes: FORBIDDEN
+  feature_changes: FORBIDDEN
+  threshold_selection: FORBIDDEN
+  horizon_changes: FORBIDDEN
+  phase_e: NOT_STARTED
+  sizing: FORBIDDEN
+  live: DISABLED
+oof_join:
+  reconstruction: D12_PRIMARY_UNION_MINUTE_BASELINE_OR_ACCELERATION_SORTED_BY_TIMESTAMP_DEDUPLICATED_KEEP_FIRST
+  key: source_index
+  invariants:
+    - timestamp_day_week_session_match
+    - all_source_indices_unique_and_in_range
+    - base_pnl_crosscheck_max_absolute_error_lte_1e-10
+edge_decomposition:
+  horizon_seconds: 30
+  current_direction: sign_of_frozen_predicted_signed_return_long_on_zero
+  actual_signed_market_return: current_direction_times_mid_market_return
+  gross_long_market_return: h30_long_executable_return_plus_observed_spread
+  gross_short_market_return: h30_short_executable_return_plus_observed_spread
+  actual_long_executable_return: h30_long_executable_return_points
+  actual_short_executable_return: h30_short_executable_return_points
+  base_slippage_round_trip_points: 2
+  base_commission_round_trip_points: d12_base_cost_minus_spread_minus_2
+  stress_slippage_round_trip_points: 4
+  stress_commission_round_trip_points: twice_base_commission
+  regime_diagnostic_thresholds: [0.50, 0.60, 0.70]
+direction_calibration:
+  population: ALL_OFFICIAL_D13_OUTER_OOF
+  equal_count_bins: 10
+  signed_sort: predicted_signed_return_points
+  magnitude_sort: absolute_predicted_signed_return_points
+  bin_assignment: stable_rank_then_array_split
+  calibration_regression: OLS_realized_signed_market_return_on_prediction_with_intercept
+  stability: report_alpha_beta_per_outer_fold
+  labels:
+    amplitude_undercalibrated_if:
+      global_beta_gte: 2.0
+      positive_beta_outer_folds_gte: 3
+      absolute_prediction_vs_absolute_realized_spearman_gte: 0.03
+    no_directional_magnitude_calibration_otherwise: true
+  calibration_coefficients_applied_to_decisions: false
+oracle_decomposition:
+  current_regime_threshold: 0.50
+  oracle_regime: h60_future_tradable_movement_ratio_gt_2
+  current_direction: sign_of_frozen_prediction
+  oracle_direction: side_with_higher_realized_base_pnl_long_before_short_on_tie
+  systems:
+    - CURRENT_REGIME_CURRENT_DIRECTION
+    - CURRENT_REGIME_ORACLE_DIRECTION
+    - ORACLE_REGIME_CURRENT_DIRECTION
+    - ORACLE_REGIME_ORACLE_DIRECTION
+  metrics: [N, gross_expectancy, executable_expectancy, BASE_expectancy, STRESS_expectancy, BASE_profit_factor, positive_weeks, active_weeks, session_distribution]
+required_directional_skill:
+  abstract_accuracy_percent: [50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+  scopes: [ALL_OOF, REGIME_050, REGIME_060, REGIME_070]
+  correct_side: realized_best_BASE_side
+  failure_side: opposite_side
+  random_seed: 20260914
+  nested_correctness_draws: one_uniform_draw_per_observation_reused_across_accuracy_levels
+  uncertainty:
+    method: UTC_DAY_BLOCK_BOOTSTRAP
+    replications: 2000
+    confidence: 0.95
+    seed: 20260914
+  break_even_definition: lowest_tested_accuracy_with_expectancy_strictly_above_zero
+cost_frontier:
+  population: frozen_current_direction_and_regime_probability_gte_0_50
+  observed_spread_always_included: true
+  candidate_rule: absolute_frozen_prediction_minus_scenario_total_cost_gt_0
+  slippage_points_per_side: [0.0, 0.5, 1.0, 2.0]
+  commission_eur_per_lot_per_side: [0.0, 1.0, 2.0, 4.0]
+  commission_point_conversion: use_observed_d13_base_commission_points_pro_rata_to_2_eur_per_lot_per_side
+  extra_scenario: OBSERVED_SPREAD_ONLY
+  break_even_commission:
+    fixed_slippage_points_per_side: 1.0
+    analytic_from_frozen_regime_050_current_direction_population: true
+  break_even_slippage:
+    fixed_commission_eur_per_lot_per_side: 2.0
+    analytic_from_frozen_regime_050_current_direction_population: true
+  cheaper_scenarios_cannot_replace_base: true
+gross_edge_first:
+  population: CURRENT_REGIME_CURRENT_DIRECTION
+  stages: [GROSS_MARKET_EDGE, EXECUTABLE_AFTER_SPREAD, AFTER_SPREAD_AND_SLIPPAGE, BASE_NET, STRESS_NET]
+hgb_diagnostic:
+  retraining_forbidden: true
+  source: D13_PERSISTED_ARTIFACTS_ONLY
+  missing_candidate_rows_policy: REPORT_UNAVAILABLE_WITHOUT_FORBIDDEN_RETRAINING_AND_RETAIN_D13_AGGREGATES
+  interpretation: EXPLORATORY_POST_HOC
+verdict_policy:
+  precedence:
+    - D14_REGIME_GATE_INSUFFICIENT
+    - D14_DIRECTION_CALIBRATION_WORTH_RESEARCH
+    - D14_COST_DOMINATED_SIGNAL
+    - D14_DIRECTION_ECONOMICALLY_TOO_WEAK
+  D14_REGIME_GATE_INSUFFICIENT:
+    condition: CURRENT_REGIME_ORACLE_DIRECTION_BASE_EXPECTANCY_LTE_0
+  D14_DIRECTION_CALIBRATION_WORTH_RESEARCH:
+    conditions_all:
+      - CURRENT_REGIME_ORACLE_DIRECTION_BASE_EXPECTANCY_GT_0
+      - GLOBAL_BETA_GTE_2
+      - POSITIVE_BETA_OUTER_FOLDS_GTE_3
+      - ABS_PREDICTION_VS_ABS_REALIZED_SPEARMAN_GTE_0_03
+      - CURRENT_DIRECTION_SIGN_ACCURACY_GT_0_50
+  D14_COST_DOMINATED_SIGNAL:
+    conditions_all:
+      - CURRENT_REGIME_CURRENT_DIRECTION_GROSS_EXPECTANCY_GT_0
+      - CURRENT_REGIME_CURRENT_DIRECTION_EXECUTABLE_EXPECTANCY_GT_0
+      - CURRENT_REGIME_CURRENT_DIRECTION_BASE_EXPECTANCY_LTE_0
+      - DIAGNOSTIC_BREAK_EVEN_REQUIRES_COMMISSION_LTE_2_EUR_PER_LOT_PER_SIDE_OR_SLIPPAGE_LTE_1_POINT_PER_SIDE
+  D14_DIRECTION_ECONOMICALLY_TOO_WEAK:
+    condition: FALLBACK_IF_NO_EARLIER_VERDICT_MATCHES
+outputs:
+  - docs/research-d14.md
+  - data/reports/research-d14.md
+  - data/reports/research-d14.json
+  - data/reports/cost-frontier.json
+  - data/reports/oracle-decomposition.json
+  - data/reports/direction-calibration.json
+d14_opens_holdout: false
+d14_retrains_model: false
+phase_e_started: false
+live_trading_enabled: false

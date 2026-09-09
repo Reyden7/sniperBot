@@ -1,9 +1,34 @@
 # SNIPER
 
-Phases A à D.11 : fondation read-only, diagnostic broker 10 EUR, pipeline historique,
-backtester tick event-driven, V2/V3 rejetés, D.10 sans preuve suffisante et audit de
-ranking D.11 instable.
-Aucun ordre live n'est implémenté.
+La mission active est désormais un scanner autonome multi-crypto **Binance Spot**, centré
+sur M5 et l'espérance nette après frais. Le premier livrable reste strictement
+`READ_ONLY` : Futures, margin, levier, sizing, endpoint d'ordre et LIVE sont absents.
+
+Les recherches Forex EURUSD A à D.14 sont terminées et conservées comme archive en
+lecture seule. Elles ne doivent plus être optimisées ni utilisées comme stratégie active.
+
+Commandes du pivot Binance :
+
+```powershell
+uv sync --locked
+uv run --locked sniper binance-check
+uv run --locked sniper crypto-universe
+uv run --locked sniper crypto-collect --duration-seconds 10 --data data
+```
+
+Sans clés, les endpoints publics fonctionnent et les frais sont un fallback configurable,
+non nul et explicitement marqué comme non spécifique au compte. Avec
+`BINANCE_API_KEY` et `BINANCE_API_SECRET`, `binance-check` lit le compte et les frais
+réels via des endpoints signés de lecture. Les secrets ne sont jamais écrits.
+
+Voir [l'architecture du pivot](docs/binance-pivot-architecture.md).
+
+## Archive Forex EURUSD
+
+Phases A à D.14 : fondation read-only, diagnostic broker 10 EUR, pipeline historique,
+backtester tick event-driven, V2/V3 rejetés, D.10 sans preuve suffisante, D.11 instable,
+D.12 favorable à la recherche, V4 D.13 non prête à geler et audit économique D.14.
+Cette archive ne contient aucun ordre live.
 
 Installation avec Python stable 3.14.x et uv :
 
@@ -18,6 +43,8 @@ uv run --locked sniper evaluate-signals --symbol EURUSD --start 2026-06-01T00:00
 uv run --locked sniper validate-edge --symbol EURUSD --start 2026-06-10T00:00:00Z --end 2026-09-08T00:00:00Z --data data
 uv run --locked sniper research-v2 --data data
 uv run --locked sniper research-v3 --data data
+uv run --locked sniper research-d12 --data data --protocol docs/research-protocol-d12.yaml
+uv run --locked sniper research-d13 --data data --protocol docs/research-protocol-d13.yaml
 uv run --locked --extra mt5 sniper collect-holdout --output data/holdout-v2
 uv run --locked pytest
 uv run --locked ruff check .
@@ -239,3 +266,31 @@ D.11 reproduit 111 136 prédictions side-OOF D.10 sur le seul dataset RESEARCH. 
 (+0,09 point) change de signe dans le contrôle interne gelé. La corrélation Spearman
 observation-level est négative (-0,0267). Verdict : `D11_UNSTABLE_RANKING_SIGNAL`.
 Aucun seuil n'est créé. Voir [docs/research-d11.md](docs/research-d11.md).
+
+## V4 Feature & Regime Discovery (Phase D.12)
+
+D.12 sépare `REGIME_QUALITY` de `WITHIN_REGIME_DIRECTION` sur 17 941 326 ticks du
+seul dataset RESEARCH. Elle compare cinq échantillonnages causaux, 88 features et six
+horizons, avec folds purgés, block bootstrap et correction FDR sur 1 056 tests. Le
+verdict préenregistré est `D12_FEATURES_WORTH_V4` : l'amplitude future est fortement
+liée à la volatilité récente et un faible effet directionnel contrariant apparaît à
+30–60 s. Ce verdict n'est pas une preuve de profitabilité et ne crée aucun V4. Voir
+[docs/research-d12.md](docs/research-d12.md).
+
+## Hierarchical V4 Research (Phase D.13)
+
+D.13 réduit les features sur TRAIN, puis teste en nested purged walk-forward
+`RegimeOpportunityModel → ContrarianDirectionModel → EconomicExecutionGate`. Le régime
+est informatif, mais l'amplitude directionnelle prédite ne couvre jamais les coûts :
+zéro candidat OOF et verdict `V4_NOT_READY_TO_FREEZE`. Le manifeste produit est un
+snapshot verrouillé non autorisé pour le HOLDOUT. Voir
+[docs/research-d13.md](docs/research-d13.md).
+
+## Economic Feasibility Audit (Phase D.14)
+
+D.14 vérifie les hashes puis décompose les 48 024 prédictions OOF D.13 sans aucun
+réentraînement. Le signal courant atteint 50,30 % de sign accuracy ; son faible edge
+brut (+0,235 point) devient déjà négatif après spread exécutable (-0,062 point), puis
+atteint -6,672 points sous BASE. La magnitude prédite n'offre qu'un Spearman de 0,059
+avec la magnitude réalisée. Verdict : `D14_DIRECTION_ECONOMICALLY_TOO_WEAK`. Voir
+[docs/research-d14.md](docs/research-d14.md).

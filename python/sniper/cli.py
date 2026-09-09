@@ -20,6 +20,15 @@ from sniper.backtest.execution_model import (
     PerLotCommission,
 )
 from sniper.backtest.slippage import FixedSlippage, NoSlippage, RandomSlippage, SlippageModel
+from sniper.binance.client import BinanceApiError, BinanceReadOnlyClient
+from sniper.binance.models import UniverseCandidate
+from sniper.binance.service import (
+    build_binance_check,
+    collect_binance_market_data,
+    render_binance_report,
+)
+from sniper.binance.settings import BinanceSettings
+from sniper.binance.universe import CryptoUniverseScanner
 from sniper.config import BrokerCheckConfig, Settings
 from sniper.data.backtest_source import load_parquet_ticks
 from sniper.data.collector import DataQualityReport, collect_ticks
@@ -35,6 +44,9 @@ from sniper.domain.evaluation import SignalEvaluationReport
 from sniper.domain.event_discovery import EventDiscoveryReport
 from sniper.domain.research_d10 import ResearchD10Report
 from sniper.domain.research_d11 import ResearchD11Report
+from sniper.domain.research_d12 import ResearchD12Report
+from sniper.domain.research_d13 import ResearchD13Report
+from sniper.domain.research_d14 import ResearchD14Report
 from sniper.domain.research_v2 import ResearchV2Report
 from sniper.domain.research_v3 import ResearchV3Report
 from sniper.domain.signal import SignalAnalysisReport
@@ -60,6 +72,9 @@ from sniper.evaluation.research_d10 import (
     render_research_d10_report,
 )
 from sniper.evaluation.research_d11 import ResearchD11Engine, render_research_d11_report
+from sniper.evaluation.research_d12 import ResearchD12Engine, render_research_d12_report
+from sniper.evaluation.research_d13 import ResearchD13Engine, render_research_d13_report
+from sniper.evaluation.research_d14 import ResearchD14Engine, render_research_d14_report
 from sniper.evaluation.research_v2 import ResearchV2Engine, render_research_v2_report
 from sniper.evaluation.research_v3 import ResearchV3Engine, render_research_v3_report
 from sniper.features.engine import FeatureEngine
@@ -667,6 +682,404 @@ def research_d11_command(
         typer.echo(report.model_dump_json(indent=2))
     else:
         print_research_d11_report(report, human_path)
+
+
+def print_research_d12_report(report: ResearchD12Report, human_path: Path) -> None:
+    table = Table(title="SNIPER Phase D.12 — FEATURE DISCOVERY", show_header=False)
+    table.add_column("Field")
+    table.add_column("Value")
+    for label, value in (
+        ("Conclusion", report.conclusion),
+        ("RESEARCH ticks", f"{report.performance.ticks_analyzed:,}"),
+        ("Complete events", f"{report.performance.complete_events:,}"),
+        ("Features", report.feature_matrix_summary["features"]),
+        ("Statistical tests", report.multiple_testing["tests"]),
+        ("Elapsed seconds", f"{report.performance.elapsed_seconds:.2f}"),
+        ("Report", human_path.resolve()),
+        ("HOLDOUT", "SEALED / NOT OPENED / NOT EVALUATED"),
+        ("V4 / Phase E / live", "NOT CREATED / NOT STARTED / DISABLED"),
+    ):
+        table.add_row(label, str(value))
+    Console(markup=False).print(table)
+
+
+@app.command("research-d12")
+def research_d12_command(
+    data: Annotated[Path, typer.Option(help="Racine du dataset RESEARCH EURUSD.")] = Path("data"),
+    start: Annotated[
+        str, typer.Option(help="Début RESEARCH UTC verrouillé.")
+    ] = "2026-06-10T00:00:00Z",
+    end: Annotated[
+        str, typer.Option(help="Fin RESEARCH UTC exclusive verrouillée.")
+    ] = "2026-09-08T00:00:00Z",
+    protocol: Annotated[Path, typer.Option(help="Protocole D.12 préenregistré.")] = Path(
+        "docs/research-protocol-d12.yaml"
+    ),
+    json_output: Annotated[bool, typer.Option("--json", help="Afficher aussi le JSON.")] = False,
+) -> None:
+    """Découvrir des features/régimes sur RESEARCH sans construire V4."""
+    try:
+        start_utc, end_utc = parse_instant(start), parse_instant(end)
+        report = ResearchD12Engine().run(
+            data_root=data,
+            start_utc=start_utc,
+            end_utc=end_utc,
+            protocol_path=protocol,
+        )
+        report_dir = data / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        stem = f"research-d12-{epoch_ms(start_utc)}-{epoch_ms(end_utc)}"
+        json_report = report.model_dump_json(indent=2)
+        human_report = render_research_d12_report(report)
+        json_path = report_dir / f"{stem}.json"
+        human_path = report_dir / f"{stem}.md"
+        json_path.write_text(json_report, encoding="utf-8")
+        human_path.write_text(human_report, encoding="utf-8")
+        (report_dir / "research-d12.json").write_text(json_report, encoding="utf-8")
+        (report_dir / "research-d12.md").write_text(human_report, encoding="utf-8")
+    except (
+        ValidationError,
+        ValueError,
+        RuntimeError,
+        PermissionError,
+        InvalidOperation,
+        OSError,
+        AttributeError,
+        OverflowError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        message = safe_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"error": message, "holdout_opened": False}))
+        else:
+            typer.echo(f"SNIPER research-d12: {message}", err=True)
+        raise typer.Exit(2) from None
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        print_research_d12_report(report, human_path)
+
+
+def print_research_d13_report(report: ResearchD13Report, human_path: Path) -> None:
+    economics = report.research_economics
+    table = Table(title="SNIPER Phase D.13 — V4 RESEARCH", show_header=False)
+    table.add_column("Field")
+    table.add_column("Value")
+    for label, value in (
+        ("Conclusion", report.conclusion),
+        ("Universe observations", f"{report.performance.primary_universe_observations:,}"),
+        ("OOF observations", f"{report.performance.outer_oof_observations:,}"),
+        ("RESEARCH candidates", f"{economics['candidate_count']:,}"),
+        ("BASE expectancy", economics["base_net_expectancy_points"]),
+        ("STRESS expectancy", economics["stress_net_expectancy_points"]),
+        ("Freeze manifest", report.freeze_manifest_sha256),
+        ("Report", human_path.resolve()),
+        ("HOLDOUT", "SEALED / NOT OPENED / NOT EVALUATED"),
+        ("Phase E / live", "NOT STARTED / DISABLED"),
+    ):
+        table.add_row(label, str(value))
+    Console(markup=False).print(table)
+
+
+@app.command("research-d13")
+def research_d13_command(
+    data: Annotated[Path, typer.Option(help="Racine du dataset RESEARCH EURUSD.")] = Path("data"),
+    start: Annotated[
+        str, typer.Option(help="Début RESEARCH UTC verrouillé.")
+    ] = "2026-06-10T00:00:00Z",
+    end: Annotated[
+        str, typer.Option(help="Fin RESEARCH UTC exclusive verrouillée.")
+    ] = "2026-09-08T00:00:00Z",
+    protocol: Annotated[Path, typer.Option(help="Protocole D.13 préenregistré.")] = Path(
+        "docs/research-protocol-d13.yaml"
+    ),
+    json_output: Annotated[bool, typer.Option("--json", help="Afficher aussi le JSON.")] = False,
+) -> None:
+    """Développer la hiérarchie V4 sur RESEARCH sans ouvrir le HOLDOUT."""
+    try:
+        start_utc, end_utc = parse_instant(start), parse_instant(end)
+        report = ResearchD13Engine().run(
+            data_root=data,
+            start_utc=start_utc,
+            end_utc=end_utc,
+            protocol_path=protocol,
+        )
+        report_dir = data / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        stem = f"research-d13-{epoch_ms(start_utc)}-{epoch_ms(end_utc)}"
+        json_report = report.model_dump_json(indent=2)
+        human_report = render_research_d13_report(report)
+        json_path = report_dir / f"{stem}.json"
+        human_path = report_dir / f"{stem}.md"
+        json_path.write_text(json_report, encoding="utf-8")
+        human_path.write_text(human_report, encoding="utf-8")
+        (report_dir / "research-d13.json").write_text(json_report, encoding="utf-8")
+        (report_dir / "research-d13.md").write_text(human_report, encoding="utf-8")
+    except (
+        ValidationError,
+        ValueError,
+        RuntimeError,
+        PermissionError,
+        OSError,
+        AttributeError,
+        OverflowError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        message = safe_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"error": message, "holdout_opened": False}))
+        else:
+            typer.echo(f"SNIPER research-d13: {message}", err=True)
+        raise typer.Exit(2) from None
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        print_research_d13_report(report, human_path)
+
+
+def print_research_d14_report(report: ResearchD14Report, human_path: Path) -> None:
+    calibration = report.direction_calibration
+    current = report.oracle_decomposition["CURRENT_REGIME_CURRENT_DIRECTION"]
+    table = Table(title="SNIPER Phase D.14 — DIAGNOSTIC ONLY", show_header=False)
+    table.add_column("Field")
+    table.add_column("Value")
+    for label, value in (
+        ("Conclusion", report.conclusion),
+        ("OOF observations", f"{report.performance.oof_observations:,}"),
+        ("Direction sign accuracy", f"{calibration['global_sign_accuracy']:.4%}"),
+        ("Direction magnitude Spearman", calibration["global_absolute_magnitude_spearman"]),
+        ("Current regime/direction BASE", current["base_expectancy_points"]),
+        ("Runtime seconds", f"{report.performance.elapsed_seconds:.3f}"),
+        ("Report", human_path.resolve()),
+        ("Models retrained / D.13 modified", "NO / NO"),
+        ("HOLDOUT", "SEALED / NOT OPENED / NOT EVALUATED"),
+        ("Phase E / sizing / live", "NOT STARTED / DISABLED / DISABLED"),
+    ):
+        table.add_row(label, str(value))
+    Console(markup=False).print(table)
+
+
+@app.command("research-d14")
+def research_d14_command(
+    data: Annotated[Path, typer.Option(help="Racine du dataset RESEARCH EURUSD.")] = Path("data"),
+    start: Annotated[
+        str, typer.Option(help="Début RESEARCH UTC verrouillé.")
+    ] = "2026-06-10T00:00:00Z",
+    end: Annotated[
+        str, typer.Option(help="Fin RESEARCH UTC exclusive verrouillée.")
+    ] = "2026-09-08T00:00:00Z",
+    protocol: Annotated[Path, typer.Option(help="Protocole D.14 préenregistré.")] = Path(
+        "docs/research-protocol-d14.yaml"
+    ),
+    json_output: Annotated[bool, typer.Option("--json", help="Afficher aussi le JSON.")] = False,
+) -> None:
+    """Auditer l'économie D.13 sur OOF, sans réentraînement ni HOLDOUT."""
+    try:
+        start_utc, end_utc = parse_instant(start), parse_instant(end)
+        report = ResearchD14Engine().run(
+            data_root=data,
+            start_utc=start_utc,
+            end_utc=end_utc,
+            protocol_path=protocol,
+        )
+        report_dir = data / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        json_report = report.model_dump_json(indent=2)
+        human_report = render_research_d14_report(report)
+        json_path = report_dir / "research-d14.json"
+        human_path = report_dir / "research-d14.md"
+        json_path.write_text(json_report, encoding="utf-8")
+        human_path.write_text(human_report, encoding="utf-8")
+        Path("docs/research-d14.md").write_text(human_report, encoding="utf-8")
+    except (
+        ValidationError,
+        ValueError,
+        RuntimeError,
+        PermissionError,
+        OSError,
+        AttributeError,
+        OverflowError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        message = safe_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"error": message, "holdout_opened": False}))
+        else:
+            typer.echo(f"SNIPER research-d14: {message}", err=True)
+        raise typer.Exit(2) from None
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        print_research_d14_report(report, human_path)
+
+
+def _print_crypto_universe(symbols: list[UniverseCandidate]) -> None:
+    table = Table(title="SNIPER Binance Spot — Dynamic Crypto Universe")
+    table.add_column("Rank", justify="right")
+    table.add_column("Symbol")
+    table.add_column("Quote")
+    table.add_column("Spread bps", justify="right")
+    table.add_column("M5 vol %", justify="right")
+    table.add_column("Net edge proxy %", justify="right")
+    table.add_column("Min order", justify="right")
+    table.add_column("Fee source")
+    for item in symbols:
+        table.add_row(
+            str(item.rank),
+            item.symbol,
+            item.quote_asset,
+            f"{item.spread_bps:.4f}",
+            f"{item.realized_volatility_m5_pct:.6f}",
+            f"{item.expected_net_edge_pct:.6f}",
+            str(item.minimum_order_at_ask_quote),
+            item.fee_source,
+        )
+    Console(markup=False).print(table)
+
+
+@app.command("binance-check")
+def binance_check_command(
+    data: Annotated[Path, typer.Option(help="Racine des données SNIPER.")] = Path("data"),
+    json_output: Annotated[bool, typer.Option("--json", help="Afficher le JSON.")] = False,
+) -> None:
+    """Vérifier Binance Spot et le compte en READ_ONLY, sans aucun ordre."""
+    try:
+        settings = BinanceSettings()
+        client = BinanceReadOnlyClient(settings)
+        report = build_binance_check(client, settings)
+        report_dir = data / "binance" / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        json_path = report_dir / "first-deliverable-binance-check.json"
+        human_path = report_dir / "first-deliverable-binance-check.md"
+        json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        human_path.write_text(render_binance_report(report), encoding="utf-8")
+    except (ValidationError, BinanceApiError, ValueError, OSError, KeyError, TypeError) as exc:
+        message = safe_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"error": message, "live_trading_enabled": False}))
+        else:
+            typer.echo(f"SNIPER binance-check: {message}", err=True)
+        raise typer.Exit(2) from None
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        status = Table(title="SNIPER Binance Spot — READ ONLY", show_header=False)
+        status.add_column("Field")
+        status.add_column("Value")
+        for label, value in (
+            ("Connection", report.connection["public_rest"]),
+            ("Mode", report.mode),
+            ("Account authenticated", report.account["authenticated"]),
+            ("Tradable priority symbols", len(report.symbols)),
+            ("Quote assets", ", ".join(report.quote_assets_available)),
+            ("Problems", len(report.problems)),
+            ("Report", human_path.resolve()),
+            ("Order endpoints / LIVE", "ABSENT / DISABLED"),
+        ):
+            status.add_row(label, str(value))
+        Console(markup=False).print(status)
+
+
+@app.command("crypto-universe")
+def crypto_universe_command(
+    json_output: Annotated[bool, typer.Option("--json", help="Afficher le JSON.")] = False,
+) -> None:
+    """Classer dynamiquement les paires Spot liquides des bases prioritaires."""
+    try:
+        settings = BinanceSettings()
+        symbols, quote_assets, account, problems = CryptoUniverseScanner(
+            BinanceReadOnlyClient(settings), settings
+        ).scan()
+    except (ValidationError, BinanceApiError, ValueError, OSError, KeyError, TypeError) as exc:
+        message = safe_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"error": message, "live_trading_enabled": False}))
+        else:
+            typer.echo(f"SNIPER crypto-universe: {message}", err=True)
+        raise typer.Exit(2) from None
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "mode": settings.trading_mode,
+                    "live_trading_enabled": False,
+                    "quote_assets_available": quote_assets,
+                    "account_authenticated": account is not None,
+                    "symbols": [item.model_dump(mode="json") for item in symbols],
+                    "problems": problems,
+                },
+                indent=2,
+            )
+        )
+    else:
+        _print_crypto_universe(symbols)
+
+
+@app.command("crypto-collect")
+def crypto_collect_command(
+    data: Annotated[Path, typer.Option(help="Racine des données SNIPER.")] = Path("data"),
+    symbols: Annotated[
+        str | None,
+        typer.Option(help="Symboles explicites séparés par virgule; sinon univers dynamique."),
+    ] = None,
+    duration_seconds: Annotated[float, typer.Option(help="Durée bornée du flux WebSocket.")] = 10.0,
+    kline_limit: Annotated[int, typer.Option(help="Bougies REST par symbole et timeframe.")] = 200,
+    json_output: Annotated[bool, typer.Option("--json", help="Afficher le JSON.")] = False,
+) -> None:
+    """Collecter M1/M5/M15, aggTrades et bookTicker en Parquet, sans ordre."""
+    try:
+        settings = BinanceSettings()
+        client = BinanceReadOnlyClient(settings)
+        if symbols:
+            selected = tuple(
+                dict.fromkeys(item.strip().upper() for item in symbols.split(",") if item.strip())
+            )
+        else:
+            universe, _, _, _ = CryptoUniverseScanner(client, settings).scan()
+            selected = tuple(item.symbol for item in universe)
+        if not selected:
+            raise ValueError("no dynamically eligible Binance Spot symbol")
+        report = collect_binance_market_data(
+            client,
+            settings,
+            data,
+            selected,
+            websocket_duration_seconds=duration_seconds,
+            kline_limit=kline_limit,
+        )
+        report_dir = data / "binance" / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        report_path = report_dir / "latest-collection.json"
+        report_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    except (ValidationError, BinanceApiError, ValueError, OSError, KeyError, TypeError) as exc:
+        message = safe_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"error": message, "live_trading_enabled": False}))
+        else:
+            typer.echo(f"SNIPER crypto-collect: {message}", err=True)
+        raise typer.Exit(2) from None
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        table = Table(title="SNIPER Binance Spot — Collection", show_header=False)
+        table.add_column("Field")
+        table.add_column("Value")
+        for label, value in (
+            ("Mode", report.mode),
+            ("Symbols", ", ".join(report.symbols)),
+            ("Intervals", ", ".join(report.intervals)),
+            ("Raw written", report.raw_records_written),
+            ("Normalized written", report.normalized_records_written),
+            ("Duplicates skipped", report.duplicates_skipped),
+            ("Problems", ", ".join(report.problems) or "NONE"),
+            ("Report", report_path.resolve()),
+            ("Order endpoints / LIVE", "ABSENT / DISABLED"),
+        ):
+            table.add_row(label, str(value))
+        Console(markup=False).print(table)
 
 
 def print_backtest_report(result: BacktestResult) -> None:

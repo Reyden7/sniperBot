@@ -1,4 +1,8 @@
-# Architecture des phases A à D.9
+# Architecture de l'archive Forex — phases A à D.14
+
+Cette architecture est désormais une archive de recherche en lecture seule. La mission
+active Binance Spot est décrite dans
+[binance-pivot-architecture.md](binance-pivot-architecture.md).
 
 Perimetre : fondation read-only, diagnostic broker et donnees historiques EURUSD.
 
@@ -148,3 +152,30 @@ de régime et anatomie post-hoc. Ses quantiles sont descriptifs : aucun chemin n
 convertit en seuil de trading. Les accès `data/holdout-v2` sont refusés avant lecture de
 protocole, hash ou modèle. Le verdict D.11 n'a aucune autorité de promotion, de sizing
 ou d'exécution.
+
+La D.12 est un moteur de découverte indépendant des décisions D.10. Elle détecte au
+premier tick de chaque seconde active cinq familles d'événements avec cooldown causal,
+fusionne les types partageant le même timestamp, puis calcule 88 features uniquement à
+partir des quotes disponibles à T. Les labels exécutables et path metrics couvrent
+30/60/180/300/600/900 s. Les partitions ticks sont lues par journée avec au plus 4 h de
+contexte et 900 s de futur ; seules les observations dérivées sont réunies pour les
+analyses. La matrice univariée, les folds purgés, les bootstraps et les modèles
+diagnostiques n'exposent aucun port d'exécution. Toute racine contenant `holdout` est
+refusée avant lecture du protocole ou création d'un modèle.
+
+La D.13 matérialise une architecture V4 strictement recherche à trois étages. Le modèle
+de régime estime à 60 s la probabilité de dépasser deux fois le coût BASE. Le modèle
+directionnel prédit à 30 s un rendement signé naturel, sans inversion de label. Le gate
+économique n'évalue ce rendement qu'après passage du régime et soustrait spread observé,
+slippage, commission et buffer nested. Le sizing reste absent. La réduction de
+redondance et tout preprocessing sont réajustés dans le TRAIN de chaque fold. Le
+manifeste D.13 rejeté ne donne aucune autorité d'accès au HOLDOUT.
+
+La D.14 est une couche d'audit en lecture seule au-dessus du Parquet OOF officiel D.13.
+Elle rejoint les outcomes D.12 par `source_index`, recalcule les PnL LONG/SHORT et
+vérifie exactement le PnL BASE persisté avant toute interprétation. Aucun estimateur
+n'est instancié : bins, OLS, oracles, simulations d'accuracy et scénarios de coûts sont
+des diagnostics post-hoc. Les oracles utilisent explicitement le futur et ne disposent
+d'aucun chemin vers un signal, le sizing ou l'exécution. L'absence de lignes HGB
+persistées est rapportée au lieu de reconstruire ces prédictions par un réentraînement
+interdit.

@@ -1,0 +1,241 @@
+schema_version: 1
+phase: D.13
+title: SNIPER V4 Hierarchical Research Development and Freeze Readiness
+registered_before_first_d13_feature_reduction_or_economic_result: true
+status: LOCKED_RESEARCH_DEVELOPMENT_ONLY
+dataset:
+  id: EURUSD_RESEARCH_20260610_20260908
+  role: RESEARCH_DEVELOPMENT
+  start_utc: 2026-06-10T00:00:00Z
+  end_utc_exclusive: 2026-09-08T00:00:00Z
+  source: data/evaluations/research-d12-20260610T000000Z-20260908T000000Z/events.parquet
+  source_sha256: a23531949d3ea9857223caf911405d48aafcd3dbbd70f78f86a561b7a3bf9c0f
+  final_independent_evidence_permitted: false
+holdout:
+  id: EURUSD_HOLDOUT_PRE_20260610
+  root: data/holdout-v2
+  state: SEALED
+  access_permitted: false
+scope:
+  architecture_design: PERMITTED
+  research_fitting: PERMITTED
+  final_validation_claim: FORBIDDEN
+  phase_e: NOT_STARTED
+  live: DISABLED
+  sizing: RISK_ENGINE_ONLY_NOT_CALLED
+  martingale: FORBIDDEN
+  grid: FORBIDDEN
+  averaging_down: FORBIDDEN
+architecture:
+  hierarchy:
+    - RegimeOpportunityModel
+    - ContrarianDirectionModel
+    - EconomicExecutionGate
+  actionable_buy_sell_output: FORBIDDEN
+  research_side_names: [RESEARCH_LONG, RESEARCH_SHORT, RESEARCH_SKIP]
+  regime_gate_must_pass_before_direction_is_used_economically: true
+event_universe:
+  primary:
+    include: [MINUTE_BASELINE, ACCELERATION_EVENT]
+    rule: UNION_DEDUPLICATED_BY_TIMESTAMP
+  diagnostics_only: [VOLATILITY_EVENT, BREAKOUT_EVENT, COMPRESSION_RELEASE_EVENT]
+  diagnostic_events_cannot_replace_primary_after_results: true
+targets:
+  regime_primary:
+    expression: FUTURE_TRADABLE_MOVEMENT_GT_2_TIMES_BASE_COST
+    horizon_seconds: 60
+    rationale: D12_STRONG_REGIME_INFORMATION_PLUS_DETECTABLE_DIRECTION_PLUS_SHORT_SCALPING
+  direction_primary:
+    expression: SIGNED_EXECUTABLE_RETURN_POINTS
+    horizon_seconds: 30
+    model_predicts_in_natural_sign: true
+    arbitrary_target_inversion: FORBIDDEN
+  diagnostic_horizons_seconds: [30, 300]
+  diagnostic_horizons_cannot_replace_primary: true
+purge:
+  seconds: 60
+  invariant: max(timestamp_train+60_seconds) <= validation_start
+  terminal_quote_tolerance_does_not_extend_label_end: true
+splits:
+  outer:
+    type: EXPANDING_PURGED_WALK_FORWARD
+    boundaries_fraction_of_90_calendar_days: [0.30, 0.40, 0.50, 0.60, 1.00]
+    roles: [MODEL_DEVELOPMENT, MODEL_DEVELOPMENT, MODEL_DEVELOPMENT, INTERNAL_RESEARCH_CHECK]
+  nested_within_each_outer_train:
+    boundaries_fraction_of_outer_train_span: [0.40, 0.60, 0.80, 1.00]
+    folds: 3
+  final_freeze_selection_scope:
+    train_fraction: [0.00, 0.60]
+    internal_research_check_fraction: [0.60, 1.00]
+  preprocessing_fit_scope: TRAIN_ONLY
+  random_split: false
+feature_reduction:
+  fit_scope: FIRST_60_PERCENT_DESIGN_TRAIN_ONLY
+  absolute_spearman_redundancy_threshold: 0.90
+  pairwise_mutual_information:
+    method: QUANTILE_DISCRETIZED_10_BY_10
+    purpose: DIAGNOSTIC_ONLY
+  representative_rule_priority:
+    - SIMPLE_CAUSAL_FORMULA
+    - D12_FOLD_STABILITY
+    - LOWER_COMPUTE_COST
+    - INTERPRETABILITY
+  regime_priority_order:
+    - realized_volatility_300s_points
+    - volatility_percentile_300s
+    - realized_move_to_base_cost_300s
+    - micro_pullback_amplitude_60s_points
+    - return_autocorrelation_lag1_900s
+    - variance_ratio_5_900s
+    - spread_vs_median_60s
+  direction_priority_order:
+    - current_signed_run_length
+    - return_5s_points
+    - return_15s_points
+    - signed_tick_imbalance_1s
+    - signed_tick_imbalance_5s
+    - displacement_per_tick_15s_points
+    - breakout_velocity_15s_points_per_second
+  removal_rule: DROP_LATER_PRIORITY_MEMBER_WHEN_ABSOLUTE_SPEARMAN_GTE_0_90_WITH_RETAINED_MEMBER
+preprocessing:
+  numeric_only: true
+  imputation: TRAIN_MEDIAN
+  clipping: TRAIN_QUANTILES_0_005_AND_0_995
+  scaling: TRAIN_STANDARD_SCALER
+  standardized_clip: [-10.0, 10.0]
+  quasi_singular_train_scale_floor: 1.0e-8
+  quasi_singular_action: DROP_FOR_THAT_FIT_AND_REPORT
+  finite_coefficients_required: true
+  finite_predictions_required: true
+  ridge_mae_sanity_upper_points: 1000.0
+models:
+  regime:
+    candidates:
+      - {id: LOGISTIC_L2, family: LogisticRegression, C: 0.1, max_iter: 500}
+      - {id: HGB_CLASSIFIER, family: HistGradientBoostingClassifier, max_iter: 75, max_depth: 3, learning_rate: 0.05}
+    baseline_primary: LOGISTIC_L2
+  direction:
+    candidates:
+      - {id: RIDGE, family: Ridge, alpha: 10.0}
+      - {id: HGB_REGRESSOR, family: HistGradientBoostingRegressor, max_iter: 75, max_depth: 3, learning_rate: 0.05}
+    baseline_primary: RIDGE
+    target: expected_signed_executable_return_points
+  random_seed: 20260913
+  neural_networks: FORBIDDEN
+  unrestricted_hyperparameter_sweep: FORBIDDEN
+probability_calibration:
+  method: NATIVE_MODEL_PROBABILITY_NO_POSTHOC_CALIBRATOR
+  reporting: [BRIER, PR_AUC, TEN_EQUAL_COUNT_BINS]
+  numeric_probability_bounds: [1.0e-6, 0.999999]
+  validation_labels_never_used_to_fit_calibration: true
+nested_selection:
+  regime_probability_thresholds: [0.50, 0.60, 0.70]
+  uncertainty_buffers_points: [0.0, 1.0, 2.0]
+  model_combinations: CARTESIAN_TWO_REGIME_BY_TWO_DIRECTION
+  total_configurations: 36
+  minimum_nested_candidates: 75
+  composite_score:
+    formula: 0.30*precision_lift + 0.20*recall + 0.15*candidate_coverage + 0.20*movement_quality + 0.15*economic_quality
+    precision_lift: clip(regime_precision/unconditional_regime_rate-1,-1,1)
+    recall: clip(regime_recall,0,1)
+    candidate_coverage: min(candidate_count/150,1)
+    movement_quality: clip(mean_future_movement_to_base_cost/2-1,-1,1)
+    economic_quality: tanh(BASE_net_expectancy_points/10)
+  ineligible_configuration_score: NEGATIVE_INFINITY
+  no_eligible_fallback: LOGISTIC_L2_RIDGE_THRESHOLD_0_50_BUFFER_0_NOT_FREEZE_ELIGIBLE
+  tie_break_order:
+    - higher_candidate_count
+    - LOGISTIC_L2
+    - RIDGE
+    - lower_regime_threshold
+    - lower_uncertainty_buffer
+economic_gate:
+  predicted_market_move_long: predicted_signed_return
+  predicted_market_move_short: -predicted_signed_return
+  predicted_base_net_edge: predicted_market_move_side - observed_spread_at_T - BASE_round_trip_slippage - BASE_round_trip_commission
+  candidate_rule: REGIME_GATE_PASS_AND_MAX_SIDE_PREDICTED_BASE_NET_EDGE_GT_UNCERTAINTY_BUFFER
+  side_rule: ARGMAX_PREDICTED_BASE_NET_EDGE_WITH_RESEARCH_LONG_BEFORE_SHORT_EXACT_TIE
+  actual_base_pnl: executable_BidAsk_side_return - BASE_round_trip_slippage - BASE_round_trip_commission
+  actual_stress_pnl: executable_BidAsk_side_return - STRESS_round_trip_slippage - STRESS_round_trip_commission
+costs:
+  broker_profile: SIMULATED_RESEARCH_PROFILE_NOT_METAQUOTES_DEMO
+  spread: OBSERVED_BID_ASK_EXECUTABLE_ACCOUNTING
+  BASE:
+    slippage_points_per_side: 1
+    commission_eur_per_lot_per_side: 2
+  STRESS:
+    slippage_points_per_side: 2
+    commission_eur_per_lot_per_side: 4
+  disclaimer: SIMULATED_ASSUMPTIONS_NOT_METAQUOTES_DEMO_OR_FUTURE_BROKER_CAPABILITY
+baselines:
+  - ALWAYS_SKIP
+  - RANDOM_SIDE_ON_V4_CANDIDATE_TIMESTAMPS_SEED_20260913
+  - UNCONDITIONAL_TRAIN_SIDE_ON_REGIME_PASS_TIMESTAMPS
+  - SIMPLE_CONTRARIAN_RETURN_5S_WITH_TRAIN_MEDIAN_ABSOLUTE_MAGNITUDE
+  - SIMPLE_CONTRARIAN_CURRENT_SIGNED_RUN_LENGTH_WITH_TRAIN_MEDIAN_ABSOLUTE_MAGNITUDE
+  - D10_FROZEN_SYSTEM_REPORTED_WITH_ORIGINAL_UNIVERSE_AND_HORIZON_NOT_DIRECTLY_COMPARABLE
+  - V4_FULL_HIERARCHY
+uncertainty:
+  bootstrap: UTC_DAY_BLOCK
+  replications: 2000
+  confidence: 0.95
+  seed: 20260913
+acceptance_criteria:
+  scope: POOLED_OUTER_OOF_RESEARCH_PERFORMANCE_ONLY
+  minimum_candidates: 150
+  minimum_active_weeks: 8
+  base_net_expectancy_gt: 0
+  lower_95_block_bootstrap_ci_base_expectancy_gt: 0
+  stress_expectancy_gte: 0
+  profit_factor_base_gte: 1.15
+  positive_week_fraction_gte: 0.60
+  largest_session_share_lte: 0.60
+  direction_better_than_both_simple_contrarian_baselines_by_base_expectancy: true
+  regime_pr_auc_better_than_unconditional_base_rate: true
+  ridge_numeric_checks_required_if_ridge_selected: true
+  all_outer_and_nested_purge_invariants_required: true
+verdicts: [V4_NOT_READY_TO_FREEZE, V4_FREEZE_READY]
+freeze_manifest:
+  name: V4_FREEZE_MANIFEST
+  status_if_not_ready: LOCKED_RESEARCH_SNAPSHOT_NOT_AUTHORIZED_FOR_HOLDOUT
+  hash_algorithm: SHA256_CANONICAL_JSON_EXCLUDING_SELF_HASH
+  required_fields:
+    - event_universe
+    - feature_list
+    - feature_formulas_source_hash
+    - redundancy_removals
+    - horizons
+    - targets
+    - model_families
+    - hyperparameters
+    - preprocessing
+    - thresholds
+    - probability_calibration
+    - costs
+    - uncertainty_buffer
+    - candidate_rule
+    - acceptance_criteria
+post_result_changes_forbidden:
+  - event_universe
+  - feature_candidates_and_priority
+  - redundancy_threshold_and_rule
+  - horizons
+  - targets
+  - model_candidates
+  - hyperparameters
+  - preprocessing
+  - nested_threshold_grid
+  - nested_buffer_grid
+  - selection_score
+  - probability_calibration
+  - costs
+  - candidate_rule
+  - acceptance_criteria
+future_validation:
+  dataset_id: FORWARD_V4
+  required_start_utc_strictly_after: 2026-09-08T00:00:00Z
+  results_required_during_d13: false
+  rationale: A_POST_DEVELOPMENT_FORWARD_TEST_IS_TEMPORALLY_STRONGER_THAN_THE_HISTORICAL_PRE_TRAIN_HOLDOUT
+d13_opens_holdout: false
+phase_e_started: false
+live_trading_enabled: false

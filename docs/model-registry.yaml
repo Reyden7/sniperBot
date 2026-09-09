@@ -1,5 +1,21 @@
 schema_version: 1
 models:
+  - model_id: SNIPER_BINANCE_SPOT_READ_ONLY_V1
+    kind: MARKET_DATA_AND_COMPATIBILITY_INFRASTRUCTURE
+    status: FIRST_DELIVERY
+    market: BINANCE_SPOT
+    primary_timeframe: M5
+    trading_mode_default: READ_ONLY
+    order_endpoints_present: false
+    futures_enabled: false
+    margin_enabled: false
+    leverage_enabled: false
+    live_trading_enabled: false
+    fee_priority: [BINANCE_ACCOUNT_API, ACCOUNT_COMMISSION_RATE, CONFIGURED_NONZERO_FALLBACK]
+    canonical_time: UTC
+    dynamic_filters: [PRICE_FILTER, LOT_SIZE, MARKET_LOT_SIZE, MIN_NOTIONAL, NOTIONAL]
+    websocket_streams: [aggTrade, bookTicker, kline_1m, kline_5m, kline_15m]
+    forex_dependency: NONE
   - model_id: SNIPER_SIGNAL_ENGINE_V1
     status: RESEARCH_REJECTED
     retained_as: HISTORICAL_BASELINE
@@ -87,6 +103,74 @@ models:
     top_5pct_positive_uplift_folds: 3
     internal_freeze_top_5pct_uplift_points: -0.173749
     new_threshold_selected: false
+    sizing_authority: NONE_DIAGNOSTIC_ONLY
+    phase_e_started: false
+    live_trading_enabled: false
+  - model_id: SNIPER_FEATURE_REGIME_DISCOVERY_D12
+    kind: DIAGNOSTIC_ONLY
+    status: FEATURES_WORTH_V4_RESEARCH
+    decision: D12_FEATURES_WORTH_V4
+    dataset_role: RESEARCH
+    holdout_state: SEALED
+    protocol: docs/research-protocol-d12.yaml
+    protocol_sha256: 93091917b41e99c8a27c912d46d90c9a18970a6457c4922d85506531e8e74aeb
+    ticks_analyzed: 17941326
+    complete_events: 72599
+    validation_observations: 48519
+    features: 88
+    interactions: 8
+    statistical_tests: 1056
+    regime_candidate_features: 43
+    direction_candidate_features: 11
+    direction_candidate_horizons_seconds: [30, 60]
+    creates_v4: false
+    sizing_authority: NONE_DIAGNOSTIC_ONLY
+    phase_e_started: false
+    live_trading_enabled: false
+  - model_id: SNIPER_HIERARCHICAL_V4_D13
+    kind: RESEARCH_ARCHITECTURE_SNAPSHOT
+    status: NOT_READY_TO_FREEZE
+    decision: V4_NOT_READY_TO_FREEZE
+    dataset_role: RESEARCH_DEVELOPMENT
+    final_independent_evidence: false
+    holdout_state: SEALED
+    protocol: docs/research-protocol-d13.yaml
+    protocol_sha256: 1f55213c8c503551b53f0086dbf6b4707c487209ad982bdbbd8e03598b81fd8f
+    primary_event_universe: [MINUTE_BASELINE, ACCELERATION_EVENT]
+    primary_universe_observations: 71846
+    outer_oof_observations: 48024
+    regime_model_snapshot: LOGISTIC_L2
+    direction_model_snapshot: RIDGE
+    regime_probability_threshold: 0.50
+    uncertainty_buffer_points: 0.0
+    research_candidates: 0
+    base_expectancy_points: null
+    stress_expectancy_points: null
+    freeze_manifest_status: LOCKED_RESEARCH_SNAPSHOT_NOT_AUTHORIZED_FOR_HOLDOUT
+    freeze_manifest_sha256: f078629ca4d7ce9054c2cf72661e87a6029628e427b57bd1130916f655c93756
+    sizing_authority: RISK_ENGINE_ONLY_NOT_CALLED
+    phase_e_started: false
+    live_trading_enabled: false
+  - model_id: SNIPER_ECONOMIC_BOTTLENECK_AUDIT_D14
+    kind: DIAGNOSTIC_ONLY
+    status: DIRECTION_ECONOMICALLY_TOO_WEAK
+    decision: D14_DIRECTION_ECONOMICALLY_TOO_WEAK
+    evaluated_model: SNIPER_HIERARCHICAL_V4_D13
+    d13_official_verdict: V4_NOT_READY_TO_FREEZE
+    dataset_role: RESEARCH_DEVELOPMENT_OOF_DIAGNOSTIC
+    final_independent_evidence: false
+    holdout_state: SEALED
+    protocol: docs/research-protocol-d14.yaml
+    protocol_sha256: 2c5604e10bbd67c4c9b258621bfd339efb6e63579c2899a6723534874e463457
+    outer_oof_observations: 48024
+    direction_sign_accuracy: 0.5030193237
+    absolute_magnitude_spearman: 0.0594732101
+    current_regime_direction_gross_expectancy_points: 0.2345532831
+    current_regime_direction_executable_expectancy_points: -0.0624327234
+    current_regime_direction_base_expectancy_points: -6.6715395479
+    current_regime_oracle_direction_base_expectancy_points: 2.9105917761
+    models_retrained: false
+    d13_parameters_modified: false
     sizing_authority: NONE_DIAGNOSTIC_ONLY
     phase_e_started: false
     live_trading_enabled: false

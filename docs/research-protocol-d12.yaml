@@ -1,0 +1,263 @@
+schema_version: 1
+phase: D.12
+title: V4 Feature and Regime Discovery
+registered_before_first_d12_label_or_performance_read: true
+status: LOCKED_DISCOVERY_ONLY
+dataset:
+  id: EURUSD_RESEARCH_20260610_20260908
+  root: data/ticks/symbol=EURUSD
+  role: RESEARCH
+  start_utc: 2026-06-10T00:00:00Z
+  end_utc_exclusive: 2026-09-08T00:00:00Z
+  symbol: EURUSD
+holdout:
+  id: EURUSD_HOLDOUT_PRE_20260610
+  root: data/holdout-v2
+  state: SEALED
+  access_permitted: false
+scope:
+  trade_skip_model: FORBIDDEN
+  buy_sell_outputs: FORBIDDEN
+  sl_tp: FORBIDDEN
+  sizing: RISK_ENGINE_ONLY_NOT_CALLED
+  phase_e: NOT_STARTED
+  live: DISABLED
+  martingale: FORBIDDEN
+  grid: FORBIDDEN
+  averaging_down: FORBIDDEN
+problems:
+  - REGIME_QUALITY
+  - WITHIN_REGIME_DIRECTION
+observation_clock:
+  detector_clock: FIRST_TICK_OF_EACH_ACTIVE_UTC_SECOND
+  feature_cutoff: ALL_QUOTES_TIMESTAMP_LTE_T
+  duplicate_policy: ONE_ROW_PER_TIMESTAMP_WITH_SORTED_EVENT_TYPES
+sampling_schemes:
+  MINUTE_BASELINE:
+    trigger: first tick of each active UTC minute
+    cooldown_seconds: 60
+  VOLATILITY_EVENT:
+    trigger: abs(mid_T-mid_T_minus_60s) >= 1.5 * realized_volatility_300s
+    minimum_history_seconds: 900
+    cooldown_seconds: 180
+  BREAKOUT_EVENT:
+    trigger: mid_T exceeds prior causal 900s high or low by at least 0.25 * realized_volatility_900s
+    current_tick_excluded_from_prior_extreme: true
+    minimum_history_seconds: 900
+    cooldown_seconds: 300
+  ACCELERATION_EVENT:
+    trigger: tick_rate_5s >= 2 * median_tick_rate_5s_at_prior_minutes_4h AND abs(return_5s) >= 0.5 * realized_volatility_60s
+    minimum_history_seconds: 1800
+    cooldown_seconds: 120
+  COMPRESSION_RELEASE_EVENT:
+    trigger: prior_range_300s <= causal_p20_prior_minute_range_300s_4h AND current_range_60s >= 1.5 * prior_range_300s
+    minimum_history_seconds: 14400
+    cooldown_seconds: 600
+  cooldown_policy: first eligible detector timestamp after timestamp_last_event_plus_cooldown
+market_features:
+  windows_seconds: [300, 900, 1800, 3600, 14400]
+  per_window:
+    - realized_volatility_points
+    - range_points
+    - trend_efficiency_ratio
+    - absolute_directional_persistence
+  additional:
+    - atr_normalized_300s
+    - volatility_percentile_300s_causal_4h_minute_reference
+    - range_expansion_ratio_300s
+    - range_compression_ratio_300s
+    - return_autocorrelation_lag1_900s
+    - variance_ratio_5_900s
+    - tick_activity_percentile_15s_causal_4h_minute_reference
+    - spread_percentile_causal_4h_minute_reference
+    - spread_to_realized_volatility_300s
+    - realized_move_to_base_cost_300s
+    - distance_to_causal_utc_daily_high_points
+    - distance_to_causal_utc_daily_low_points
+    - position_in_causal_utc_daily_range
+    - distance_to_intraday_twap_points
+    - intraday_twap_slope_900s_points
+    - session_age_minutes
+    - minutes_since_london_open
+    - minutes_since_new_york_open
+    - london_new_york_overlap
+    - asian_range_points_available_to_t
+    - london_first_30m_realized_volatility_available_to_t
+    - london_first_60m_range_available_to_t
+    - london_open_displacement_points_available_to_t
+  unavailable:
+    volume_vwap: MT5_RESEARCH_QUOTES_DO_NOT_PROVIDE_RELIABLE_TRADED_VOLUME
+    order_book: NOT_COLLECTED
+    replacement: INTRADAY_TIME_WEIGHTED_QUOTE_MID_TWAP_EXPLICITLY_NAMED
+microstructure_features:
+  - signed_tick_imbalance_1s
+  - signed_tick_imbalance_5s
+  - signed_tick_imbalance_15s
+  - signed_tick_imbalance_30s
+  - signed_tick_imbalance_60s
+  - imbalance_acceleration_5s_vs_30s
+  - run_length_mean_60s
+  - run_length_max_60s
+  - current_signed_run_length
+  - transition_probability_up_up_60s
+  - transition_probability_down_down_60s
+  - interarrival_mean_5s
+  - interarrival_mean_60s
+  - interarrival_cv_60s
+  - interarrival_acceleration_5s_vs_60s
+  - quote_change_rate_5s
+  - quote_change_rate_60s
+  - spread_change_rate_60s
+  - spread_delta_vs_median_60s
+  - displacement_per_tick_15s_points
+  - micro_pullback_amplitude_60s_points
+  - time_since_local_high_60s
+  - time_since_local_low_60s
+  - failed_breakout_count_60s
+  - breakout_velocity_15s_points_per_second
+  - retest_latency_seconds
+baseline_features:
+  - return_5s_points
+  - return_15s_points
+  - return_30s_points
+  - return_60s_points
+  - tick_rate_1s
+  - tick_rate_5s
+  - tick_rate_15s
+  - tick_rate_acceleration
+  - tick_uptick_ratio_60s
+  - spread_points
+  - spread_vs_median_60s
+pre_registered_interactions:
+  - return_60s_x_high_volatility
+  - breakout_velocity_x_low_spread_vol
+  - micro_pullback_x_trend_efficiency_900s
+  - imbalance_15s_x_compression_release
+  - imbalance_acceleration_x_range_expansion
+  - signed_persistence_900s_x_volatility_percentile
+  - london_displacement_x_overlap
+  - distance_twap_x_trend_efficiency_3600s
+interaction_definitions:
+  high_volatility: causal_volatility_percentile_gte_2_over_3
+  low_spread_vol: spread_to_realized_volatility_300s_lte_0.5
+  compression_release: COMPRESSION_RELEASE_EVENT_at_T
+  signed_persistence: sign(return_60s)*absolute_directional_persistence_900s
+causal_regimes:
+  canonical_session_schedule_utc_for_entire_research_period:
+    ASIA: 00:00-07:00
+    LONDON: 07:00-12:00
+    LONDON_NEW_YORK: 12:00-16:00
+    NEW_YORK: 16:00-21:00
+    OTHER: 21:00-24:00
+  volatility:
+    LOW: percentile_lt_0.3333333333
+    MEDIUM: percentile_gte_0.3333333333_and_lt_0.6666666667
+    HIGH: percentile_gte_0.6666666667
+  trend:
+    RANGE: trend_efficiency_900s_lt_0.30
+    TREND: trend_efficiency_900s_gte_0.30
+labels:
+  horizons_seconds: [30, 60, 180, 300, 600, 900]
+  terminal_quote_tolerance_seconds: 2
+  signed_executable_return: (LONG_executable_return-SHORT_executable_return)/2
+  required_path_metrics: [MFE_LONG, MAE_LONG, MFE_SHORT, MAE_SHORT]
+  future_tradable_movement: max(gross_MFE_LONG,gross_MFE_SHORT)/BASE_all_in_cost_at_T
+  movement_thresholds: [1.5, 2.0, 3.0, 4.0]
+  path_quality: max(gross_MFE_LONG,gross_MFE_SHORT)/max(opposite_adverse_move,1_point)
+  primary_multivariate_diagnostic_target:
+    horizon_seconds: 300
+    regime_threshold_move_to_cost: 2.0
+  no_horizon_selection_after_results: true
+  completeness_policy: retain_event_only_if_all_six_terminal_quotes_exist_within_tolerance
+costs:
+  scenario: BASE
+  spread: OBSERVED_AT_T
+  slippage_points_per_side: 1
+  commission_eur_per_lot_per_side: 2
+  commission_minimum_eur_per_side: 0
+  broker_profile: SIMULATED_RESEARCH_PROFILE_NOT_METAQUOTES_DEMO
+folds:
+  type: EXPANDING_PURGED_WALK_FORWARD
+  validation_boundaries_fraction_of_90_calendar_days: [0.30, 0.40, 0.50, 0.60, 1.00]
+  roles: [MODEL_DEVELOPMENT, MODEL_DEVELOPMENT, MODEL_DEVELOPMENT, INTERNAL_FREEZE_CHECK]
+  purge_seconds: LABEL_HORIZON_SECONDS
+  invariant: max(timestamp_train+horizon_seconds) <= validation_start
+univariate_diagnostics:
+  effects: [SPEARMAN, MUTUAL_INFORMATION, FIVE_EQUAL_COUNT_MONOTONIC_BINS]
+  mutual_information: QUANTILE_DISCRETIZED_10_BY_10
+  scopes: [GLOBAL, FOLD_1, FOLD_2, FOLD_3, FOLD_4, VOLATILITY_REGIME, TREND_REGIME]
+  confidence_intervals:
+    estimand: MEAN_WITHIN_BLOCK_SPEARMAN
+    blocks: [UTC_DAY, ISO_WEEK]
+    replications: 500
+    confidence: 0.95
+    seed: 20260912
+multiple_testing:
+  family: ALL_FEATURE_X_HORIZON_X_TARGET_ROWS
+  correction: BENJAMINI_HOCHBERG
+  fdr_q: 0.10
+feature_status:
+  minimum_observations: 5000
+  non_negligible_absolute_spearman: 0.03
+  required_same_nonzero_sign_folds: 3
+  fold_zero_band_absolute_spearman: 0.005
+  required_absolute_monotonic_bin_spearman: 0.70
+  maximum_single_session_share_in_extreme_feature_decile: 0.60
+  winsorized_effect_minimum_fraction_of_raw: 0.50
+  candidate_requires_day_block_ci_excludes_zero: true
+  candidate_requires_fdr_q_lte: 0.10
+  unstable_requires: abs_spearman_gte_0.02_AND_same_sign_3_folds_OR_fdr_q_lte_0.10_OR_day_block_ci_excludes_zero
+  statuses: [FEATURE_NO_SIGNAL, FEATURE_UNSTABLE, FEATURE_RESEARCH_CANDIDATE]
+multivariate_diagnostics:
+  models:
+    direction: [RIDGE, HIST_GRADIENT_BOOSTING_REGRESSOR]
+    regime: [LOGISTIC_REGRESSION_L2, HIST_GRADIENT_BOOSTING_CLASSIFIER]
+  hyperparameters:
+    ridge_alpha: 10.0
+    logistic_C: 0.1
+    logistic_max_iter: 300
+    hgb_max_iter: 75
+    hgb_max_depth: 3
+    hgb_learning_rate: 0.05
+    random_seed: 20260912
+  importance:
+    permutation: OOF_GROUP_PERMUTATION_ALL_HORIZONS
+    permutation_repeats: 3
+    ablation: OOF_LINEAR_MODEL_GROUP_REFIT_ALL_HORIZONS
+  feature_groups:
+    - volatility
+    - trend
+    - momentum
+    - microstructure
+    - spread_cost
+    - session_time
+    - breakout_retest
+    - regime
+verdict_policy:
+  D12_FEATURES_WORTH_V4:
+    regime_unique_candidate_features_minimum: 3
+    regime_candidate_feature_groups_minimum: 2
+    direction_unique_candidate_features_minimum: 3
+    direction_candidate_feature_groups_minimum: 2
+    each_problem_requires_candidate_in_at_least_2_horizons: true
+    internal_freeze_opposite_effect_prohibited: true
+  D12_UNSTABLE_FEATURE_SIGNAL:
+    condition: at_least_one_FEATURE_UNSTABLE_or_only_one_problem_meets_worth_criteria
+  D12_NO_USEFUL_FEATURE_SIGNAL:
+    condition: no_FEATURE_RESEARCH_CANDIDATE_and_no_FEATURE_UNSTABLE
+post_result_changes_forbidden:
+  - event_definitions
+  - cooldowns
+  - features
+  - interactions
+  - horizons
+  - targets
+  - costs
+  - folds
+  - statistical_tests
+  - fdr
+  - feature_status_thresholds
+  - verdict_policy
+d12_creates_v4: false
+phase_e_started: false
+live_trading_enabled: false

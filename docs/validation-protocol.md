@@ -91,6 +91,33 @@ de régime, le marquage `EXPLORATORY_POST_HOC` et le refus du HOLDOUT avant tout
 aux hashes ou aux modèles. La reproduction officielle doit retrouver 14/4 candidats
 D.10 et l'empreinte OOF gelée.
 
+Les tests Phase D.12 prouvent l'invariance des features secondes après ajout de quotes
+futures, les cooldowns, l'usage Ask/Bid des labels, la définition 60 s de
+compression-release, les quatre folds déclarés, les huit interactions, la correction
+Benjamini-Hochberg et le refus du HOLDOUT avant lecture du protocole. Le replay officiel
+contrôle en outre la purge propre à chacun des six horizons sur les 24 frontières
+modèle/fold.
+
+Les tests Phase D.13 verrouillent la réduction ordonnée à `|rho| >= 0,90`, le scaling
+TRAIN-only borné, la suppression des colonnes quasi singulières, les coefficients et
+prédictions Ridge finis, la décomposition exécutable Bid/Ask des coûts, les folds nested
+purgés, la stabilité du hash canonique du manifeste et le refus du HOLDOUT avant lecture
+du protocole. Le replay officiel retrouve 71 846 observations dans l'univers primaire,
+48 024 sorties OOF et zéro candidat après coût.
+
+Les tests Phase D.14 contrôlent les dix bins à effectifs égaux, le choix du meilleur
+side par l'oracle, le maintien du spread observé dans la frontière de coûts et le refus
+du HOLDOUT avant tout accès source. Le replay officiel vérifie les trois hashes d'entrée,
+l'identité `source_index/timestamp/session` et retrouve une erreur nulle entre PnL BASE
+persisté et recalculé.
+
+Le premier lot Binance teste le refus double de LIVE, les filtres Spot dynamiques,
+l'arrondi Decimal, le minimum notionnel, les frais/spread/slippage aller-retour, la
+normalisation UTC des trades/book/klines, la composition des cinq flux WebSocket,
+l'idempotence Parquet, les limites HTTP 418/429, la liste blanche REST et la sélection
+dynamique de la quote par volume de base. Les tests ne contactent pas Binance ; la
+connexion publique réelle et la collecte bornée constituent un contrôle séparé.
+
 Un diagnostic reel se lance separement, sur Windows et un terminal MT5 connecte :
 
 ```text
@@ -107,10 +134,10 @@ compilation et validation de l'execution appartiennent a la phase MQL5 ulterieur
 
 ## Resultat local du 9 septembre 2026
 
-- Python 3.14.6, pytest 9.1.1 : 226 tests réussis, dont les propriétés Hypothesis.
-- Ruff (lint et format) : succès ; mypy strict : succès sur les 58 modules Python.
+- Python 3.14.6, pytest 9.1.1 : 254 tests réussis, dont les propriétés Hypothesis.
+- Ruff (lint et format) : succès ; mypy strict : succès sur les 76 modules Python.
 - Installation `uv sync --offline --locked --extra mt5` : succes depuis le cache local.
-- Construction sdist et wheel 0.11.0 : succès ; archives vérifiées sans cache, .venv,
+- Construction sdist et wheel 0.15.0 : succès ; archives vérifiées sans cache, .venv,
   donnees de marche, manifestes ou `.env` secret (`.env.example` est conserve).
 - SDK MetaTrader5 5.0.6180 reel : collecte EURUSD reussie sur un terminal connecte.
   Plage `[2026-09-08T07:46:00.000316Z, 2026-09-08T07:51:00.000316Z)` :
