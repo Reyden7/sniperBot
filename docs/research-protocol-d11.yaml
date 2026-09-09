@@ -1,0 +1,97 @@
+schema_version: 1
+phase: D.11
+registered_before_first_d11_prediction: true
+status: LOCKED_DIAGNOSTIC_ONLY
+dataset:
+  id: EURUSD_RESEARCH_20260610_20260908
+  role: RESEARCH
+  start_utc: 2026-06-10T00:00:00Z
+  end_utc_exclusive: 2026-09-08T00:00:00Z
+holdout:
+  state: SEALED
+  access_permitted: false
+d10_reproduction:
+  official_verdict: D10_INSUFFICIENT_EVIDENCE
+  protocol_sha256: 20d8967079e4503b581e8729aa140efe8bbdf7713e29e86c230ef4256b1cfcf5
+  freeze_manifest_sha256: 1a20efb21268db540c6c6f3547f1b76d0dff4c1950ef2f4570ecd468caca4699
+  engine_sha256: 93630689811933c21773ca50b4e0236b7407dcd207f6e358a0daafe3a16969dd
+  report_sha256: 31836898ece3cf439682579055f0b3b9871ef73ee2b98e0b3445daccee05957d
+  exact_model_reconstruction_required: true
+  oof_only: true
+locked_elements:
+  features: D10_FROZEN
+  models: D10_FROZEN
+  configuration: B02_PRIMARY
+  ev_formula: D10_FROZEN
+  costs: D10_FROZEN
+  safety_buffer: D10_FROZEN
+  trading_threshold_selection: FORBIDDEN
+ev_distribution:
+  statistics: [min, p01, p05, p10, p25, median, p75, p90, p95, p99, max]
+  fields: [predicted_EV, safety_buffer, conservative_EV]
+  diagnostic_thresholds: [0, 1, 2, 3, 5, 10]
+ranking:
+  correlations: [SPEARMAN, KENDALL_TAU]
+  conservative_correlation: SPEARMAN
+  scopes: [LONG, SHORT, COMBINED_SIDE_OBSERVATIONS]
+  combined_definition: POOL_LONG_AND_SHORT_HYPOTHETICAL_SIDE_OBSERVATIONS
+  confidence_intervals:
+    method: UTC_DAY_BLOCK_BOOTSTRAP
+    replications: 2000
+    confidence: 0.95
+    seed: 20260911
+ranking_curve:
+  sort: predicted_EV_desc_then_timestamp_asc_then_side_asc
+  top_fractions: [0.10, 0.05, 0.02, 0.01, 0.005, 0.0025, 0.001]
+  count_policy: max(1, ceil(fraction*N))
+  new_trading_rule_permitted: false
+economic_calibration:
+  groups: 10
+  grouping: EQUAL_COUNT_SORTED_BY_PREDICTED_EV
+  fields: [mean_predicted_EV, mean_realized_BASE_pnl, difference, N]
+regime_audit:
+  numeric:
+    - spread_points
+    - m1_atr_points
+    - m5_atr_points
+    - m15_atr_points
+    - tick_rate_1s
+    - tick_rate_5s
+    - tick_rate_15s
+    - m5_momentum_points
+    - m1_momentum_1_points
+    - predicted_EV
+    - P_TARGET
+    - P_STOP
+    - P_NEITHER
+  categorical: [session, actual_outcome]
+  comparisons: [ADJACENT_FOLDS, MODEL_DEVELOPMENT_VS_INTERNAL_FREEZE_CHECK]
+  measures: [STANDARDIZED_MEAN_DIFFERENCE, PSI, NORMALIZED_WASSERSTEIN]
+  psi_bins: 10
+candidate_anatomy:
+  expected_development_candidates: 14
+  expected_freeze_candidates: 4
+  interpretation: EXPLORATORY_POST_HOC
+safety_buffer:
+  formula: max(0, -mean_daily_residual + 1.645*standard_error)
+  modifications_permitted: false
+verdict_policy:
+  D11_RANKING_SIGNAL_WORTH_FURTHER_RESEARCH:
+    top_5pct_positive_uplift_minimum_folds: 3
+    global_decile_mean_monotonic_spearman_gt: 0
+    pooled_predicted_ev_spearman_gt: 0
+    pooled_spearman_ci95_lower_gt: 0
+    top_5pct_largest_session_share_lte: 0.60
+  D11_UNSTABLE_RANKING_SIGNAL:
+    condition: aggregate_top5_uplift_positive_or_pooled_spearman_positive_but_worth_criteria_fail
+  D11_NO_RANKING_SIGNAL:
+    condition: no_positive_aggregate_relation_and_no_stable_high_ev_improvement
+post_result_changes_forbidden:
+  - quantiles
+  - correlation_metrics
+  - bootstrap_method
+  - regime_metrics
+  - verdict_policy
+d12_created: false
+phase_e_started: false
+live_trading_enabled: false

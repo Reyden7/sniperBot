@@ -43,7 +43,9 @@ qu'une MAE nulle transforme un ratio descriptif en valeur artificiellement infin
 
 Le dataset `[2026-06-10, 2026-09-08)` reste exclusivement `RESEARCH`. Le split utilise
 60 % de TRAIN initial, puis quatre fenêtres walk-forward de 10 %. À chaque fold,
-scaler, encodeur et modèle sont ajustés sur le passé uniquement.
+scaler, encodeur et modèle sont ajustés sur le passé uniquement. Depuis l'audit D.9A,
+une observation TRAIN n'est retenue que si son label complet finit avant le début de
+VALIDATION : `timestamp + timeout <= validation_start`.
 
 Les modèles LONG et SHORT comparent prévalence triviale, régression logistique
 régularisée et HistGradientBoosting. La régression logistique est le modèle primaire
@@ -71,3 +73,15 @@ Les deux candidats proviennent des semaines W33 et W36 et uniquement de la sessi
 Londres/New York. Les trois hypothèses D.7 ont toutes une expectancy BASE négative.
 La conclusion est `V3_RESEARCH_REJECTED`. Aucune configuration secondaire ne remplace
 B02_PRIMARY et le HOLDOUT reste scellé.
+
+## Audit méthodologique D.9A
+
+Le replay purgé a retiré, par fold, `[0, 5, 5, 0]` lignes TRAIN pour B02_PRIMARY.
+Les variations de PR-AUC et de Brier sont infimes, les deux mêmes candidats restent
+sélectionnés et les expectancies exécutable, BASE et STRESS sont strictement
+inchangées. Le verdict final reste `V3_RESEARCH_REJECTED`.
+
+Le diagnostic primaire totalise 13,7705 % `TARGET_FIRST`, 50,4874 % `STOP_FIRST` et
+35,7421 % `NEITHER` sur les événements LONG et SHORT. La formule V3 préenregistrée
+assimile les deux dernières issues via `(1-p_target) * stop`; elle n'a pas été modifiée
+pendant D.9A. Une éventuelle D.10 devra modéliser séparément les trois issues.

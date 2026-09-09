@@ -36,6 +36,57 @@ models:
     primary_model: REGULARIZED_LOGISTIC_REGRESSION
     primary_candidates: 2
     primary_base_net_expectancy_points: -45.62501
-    post_result_protocol_changes: false
+    methodology_audit: D9A_PURGED_REPLAY
+    original_report_sha256: 764b1730668cd562bfcbf9ecf6d15dde436d5aa553cbcd967d65e65b95014de7
+    purged_walk_forward:
+      invariant: max(label_end_time TRAIN) <= validation_start
+      checks_passed: 16
+      primary_configuration_rows_purged_by_fold: [0, 5, 5, 0]
+    purged_decision: V3_RESEARCH_REJECTED
+    purged_primary_candidates: 2
+    purged_primary_base_net_expectancy_points: -45.62501
+    purged_report_sha256: a2871c3328939584cbf2082240dc0cb81bf424ef762ffa6e8f9d3c376822d348
+    parameters_changed_during_d9a: false
+    d10_status: D10_INSUFFICIENT_EVIDENCE
     sizing_authority: RISK_ENGINE_ONLY
+    live_trading_enabled: false
+  - model_id: SNIPER_THREE_OUTCOME_EXPECTED_VALUE_D10
+    status: INSUFFICIENT_EVIDENCE
+    decision: D10_INSUFFICIENT_EVIDENCE
+    dataset_role: RESEARCH
+    holdout_state: SEALED
+    protocol: docs/research-protocol-d10.yaml
+    protocol_sha256: 20d8967079e4503b581e8729aa140efe8bbdf7713e29e86c230ef4256b1cfcf5
+    freeze_manifest_sha256: 1a20efb21268db540c6c6f3547f1b76d0dff4c1950ef2f4570ecd468caca4699
+    primary_configuration: B02_PRIMARY
+    primary_model: MULTINOMIAL_LOGISTIC_REGRESSION
+    freeze_candidates: 4
+    freeze_base_net_expectancy_points: 7.870025
+    freeze_base_expectancy_ci95: [-43.6144, 32.3446]
+    freeze_stress_net_expectancy_points: 1.24005
+    freeze_active_weeks: 3
+    freeze_largest_session_share: 0.75
+    post_freeze_parameter_changes: false
+    sizing_authority: RISK_ENGINE_ONLY
+    phase_e_started: false
+    live_trading_enabled: false
+  - model_id: SNIPER_D10_RANKING_AUDIT_D11
+    kind: DIAGNOSTIC_ONLY
+    status: UNSTABLE_RANKING_SIGNAL
+    decision: D11_UNSTABLE_RANKING_SIGNAL
+    evaluated_model: SNIPER_THREE_OUTCOME_EXPECTED_VALUE_D10
+    d10_official_verdict: D10_INSUFFICIENT_EVIDENCE
+    dataset_role: RESEARCH
+    holdout_state: SEALED
+    protocol: docs/research-protocol-d11.yaml
+    protocol_sha256: 2730ccadbe929fc94fd67fbdcb253d904fd8e672c9b549033837e5f29dd0d89a
+    ranking_side_observations: 111136
+    pooled_spearman_predicted_ev_vs_base: -0.0267158558
+    combined_top_5pct_base_expectancy_points: -7.290274
+    combined_top_5pct_uplift_points: 0.087555
+    top_5pct_positive_uplift_folds: 3
+    internal_freeze_top_5pct_uplift_points: -0.173749
+    new_threshold_selected: false
+    sizing_authority: NONE_DIAGNOSTIC_ONLY
+    phase_e_started: false
     live_trading_enabled: false

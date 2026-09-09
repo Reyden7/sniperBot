@@ -116,3 +116,35 @@ Bid/Ask futurs -> labels isolés ─────┘
 
 Les labels futurs n'entrent jamais dans la matrice de features. Le MetaGate n'a aucune
 autorité de sizing ou d'exécution.
+
+La D.9A durcit uniquement la frontière temporelle TRAIN. Pour chaque configuration,
+le dernier label TRAIN doit être entièrement observable avant VALIDATION :
+
+```text
+observation_timestamp + configuration.timeout_seconds <= validation_start
+```
+
+Les timeouts de purge sont B01=180 s, B02_PRIMARY=300 s, B03=600 s et B04=900 s.
+La tolérance de 2 s sert à accepter la dernière quote disponible avant le timeout et
+n'étend pas la fin du label. Le HOLDOUT n'entre dans aucun chemin de D.9A.
+
+La D.10 conserve B02_PRIMARY et remplace le MetaGate binaire par une espérance à trois
+issues :
+
+```text
+Features <= T -> P(TARGET), P(STOP), P(NEITHER) par side
+TRAIN payoffs -> EV_BASE par side
+Nested daily residuals -> safety buffer
+EV_BASE - buffer > 0 -> LONG / SHORT / SKIP
+```
+
+Le payoff `NEITHER` est le PnL exécutable au timeout. Les estimations de payoff et le
+buffer proviennent uniquement de TRAIN purgé. Le freeze check n'autorise aucune
+adaptation, aucun sizing et aucun accès au HOLDOUT.
+
+La D.11 réutilise exactement les modèles et folds D.10 pour produire un tableau OOF
+side-level, puis sépare les diagnostics de ranking, calibration économique, changement
+de régime et anatomie post-hoc. Ses quantiles sont descriptifs : aucun chemin ne les
+convertit en seuil de trading. Les accès `data/holdout-v2` sont refusés avant lecture de
+protocole, hash ou modèle. Le verdict D.11 n'a aucune autorité de promotion, de sizing
+ou d'exécution.

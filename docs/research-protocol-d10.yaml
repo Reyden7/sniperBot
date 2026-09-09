@@ -1,0 +1,115 @@
+schema_version: 1
+phase: D.10
+registered_before_first_training: true
+status: LOCKED_FOR_D10_RESEARCH
+dataset:
+  dataset_id: EURUSD_RESEARCH_20260610_20260908
+  role: RESEARCH
+  start_utc: 2026-06-10T00:00:00Z
+  end_utc_exclusive: 2026-09-08T00:00:00Z
+  sampling: FIRST_TICK_PER_ACTIVE_UTC_MINUTE
+holdout:
+  dataset_id: EURUSD_HOLDOUT_PRE_20260610
+  state: SEALED
+  access_permitted: false
+primary_configuration:
+  id: B02_PRIMARY
+  stop_atr: 1.0
+  target_atr: 2.0
+  minimum_target_to_base_cost: 2.0
+  timeout_seconds: 300
+  cost_scenario: BASE
+secondary_configurations_evaluated: false
+outcomes: [TARGET_FIRST, STOP_FIRST, NEITHER]
+economic_labels:
+  values: [actual_executable_pnl, actual_BASE_net_pnl, actual_STRESS_net_pnl]
+  first_hit_uses_realized_tick_price: true
+  neither_uses_executable_timeout_exit: true
+  nominal_barrier_substitution_for_realized_pnl: false
+split:
+  model_development:
+    - {fold: 1, train: [0.00, 0.30], validation: [0.30, 0.40]}
+    - {fold: 2, train: [0.00, 0.40], validation: [0.40, 0.50]}
+    - {fold: 3, train: [0.00, 0.50], validation: [0.50, 0.60]}
+  internal_freeze_check:
+    fold: 4
+    train: [0.00, 0.60]
+    validation: [0.60, 1.00]
+  purge_seconds: 300
+  invariant: label_end_time_train <= validation_start
+  random_split: false
+  preprocessing_fit_scope: TRAIN_ONLY
+  nested_train_folds:
+    - {train: [0.00, 0.40], validation: [0.40, 0.60]}
+    - {train: [0.00, 0.60], validation: [0.60, 0.80]}
+    - {train: [0.00, 0.80], validation: [0.80, 1.00]}
+probabilistic_primary:
+  family: MULTINOMIAL_LOGISTIC_REGRESSION
+  separate_long_short: true
+  hyperparameters: {penalty: L2, C: 1.0, max_iter: 500, random_state: 20260910}
+  calibration: NATIVE_SOFTMAX_NO_POSTHOC
+  challenger:
+    family: HIST_GRADIENT_BOOSTING_CLASSIFIER
+    hyperparameters: {max_iter: 50, max_depth: 3, learning_rate: 0.08, random_state: 20260910}
+  automatic_challenger_promotion: false
+conditional_payoffs:
+  estimator: TRAIN_MEAN_BASE_PNL_BY_SIDE_AND_OUTCOME
+  missing_class_fallback: TRAIN_MEAN_BASE_PNL_FOR_SIDE
+  validation_data_permitted: false
+ev_formula: SUM_OVER_OUTCOMES(P_OUTCOME_TIMES_TRAIN_CONDITIONAL_BASE_PNL)
+safety_buffer:
+  source: NESTED_PURGED_TRAIN_OOF_RESIDUALS
+  temporal_block: UTC_DAY
+  formula: max(0, -mean_daily_residual + 1.645*sd_daily_residual/sqrt(day_count))
+  residual: actual_BASE_net_pnl - predicted_EV
+candidate_rule:
+  eligible: predicted_EV - safety_buffer > 0
+  no_positive_side: SKIP
+  both_positive: MAX_CONSERVATIVE_EV
+  probability_threshold: null
+direct_pnl_challengers:
+  target: actual_BASE_net_pnl
+  models:
+    - TRAIN_MEAN
+    - {RIDGE: {alpha: 1.0}}
+    - {ELASTIC_NET: {alpha: 0.001, l1_ratio: 0.5, max_iter: 2000}}
+    - {HIST_GRADIENT_BOOSTING_REGRESSOR: {max_iter: 50, max_depth: 3, learning_rate: 0.08}}
+baselines:
+  - ALWAYS_SKIP
+  - RANDOM_SIDE_EVERY_OBSERVATION_SEED_20260910
+  - UNCONDITIONAL_TRAIN_EV
+  - V3_METAGATE_EXACT
+confidence_intervals:
+  method: UTC_DAY_BLOCK_BOOTSTRAP
+  replications: 2000
+  confidence: 0.95
+  seed: 20260910
+  metrics: [BASE_NET_EXPECTANCY, STRESS_NET_EXPECTANCY, PROFIT_FACTOR_BASE, WIN_RATE]
+freeze_acceptance:
+  minimum_candidates: 100
+  minimum_active_weeks: 6
+  base_net_expectancy_gt: 0
+  lower_95_ci_base_expectancy_gt: 0
+  stress_net_expectancy_gte: 0
+  profit_factor_base_gte: 1.10
+  positive_week_fraction_gte: 0.60
+  largest_session_share_lte: 0.60
+verdicts:
+  - D10_RESEARCH_REJECTED
+  - D10_INSUFFICIENT_EVIDENCE
+  - D10_NEEDS_MORE_RESEARCH
+  - D10_FREEZE_CANDIDATE
+post_freeze_changes_forbidden:
+  - features
+  - model_family
+  - hyperparameters
+  - calibration
+  - barriers
+  - horizon
+  - cost_scenario
+  - ev_formula
+  - safety_buffer
+  - candidate_rule
+  - acceptance_criteria
+phase_e_started: false
+live_trading_enabled: false

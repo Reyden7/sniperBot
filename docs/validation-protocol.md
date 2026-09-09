@@ -74,6 +74,23 @@ features à T. Ils contrôlent aussi les prix exécutables ASK/BID, l'ordre targ
 le timeout, les quatre folds expanding TRAIN_ONLY et l'assemblage indépendant des
 probabilités LONG/SHORT dans le MetaGate.
 
+Les tests Phase D.9A vérifient les quatre purges propres aux timeouts 180/300/600/900 s.
+Ils imposent sur chaque fold `max(label_end_time TRAIN) <= validation_start`, et non la
+seule séparation des timestamps d'observation. Le replay conserve toutes les fenêtres
+VALIDATION et tous les paramètres V3 inchangés.
+
+Les tests Phase D.10 verrouillent le split développement/freeze, la purge B02 de 300 s,
+le refus explicite d'une racine HOLDOUT, l'encodage des trois issues, la somme des
+probabilités, le vrai payoff BASE de NEITHER, la reproductibilité du freeze manifest
+et le bootstrap par blocs journaliers. Les challengers ne disposent d'aucun chemin de
+promotion automatique.
+
+Les tests Phase D.11 contrôlent les seuils de densité EV sans sélection, les quantiles
+de ranking préenregistrés, les dix groupes de calibration, les métriques de changement
+de régime, le marquage `EXPLORATORY_POST_HOC` et le refus du HOLDOUT avant tout accès
+aux hashes ou aux modèles. La reproduction officielle doit retrouver 14/4 candidats
+D.10 et l'empreinte OOF gelée.
+
 Un diagnostic reel se lance separement, sur Windows et un terminal MT5 connecte :
 
 ```text
@@ -88,12 +105,12 @@ necessaire d'activer Algo Trading pour lire les donnees ou faire ces estimations
 Le squelette EA n'est pas un EA de trading a valider dans le Strategy Tester ;
 compilation et validation de l'execution appartiennent a la phase MQL5 ulterieure.
 
-## Resultat local du 8 septembre 2026
+## Resultat local du 9 septembre 2026
 
-- Python 3.14.6, pytest 9.1.1 : 209 tests réussis, dont les propriétés Hypothesis.
-- Ruff (lint et format) : succès ; mypy strict : succès sur les 54 modules Python.
+- Python 3.14.6, pytest 9.1.1 : 226 tests réussis, dont les propriétés Hypothesis.
+- Ruff (lint et format) : succès ; mypy strict : succès sur les 58 modules Python.
 - Installation `uv sync --offline --locked --extra mt5` : succes depuis le cache local.
-- Construction sdist et wheel 0.9.0 : succès ; archives vérifiées sans cache, .venv,
+- Construction sdist et wheel 0.11.0 : succès ; archives vérifiées sans cache, .venv,
   donnees de marche, manifestes ou `.env` secret (`.env.example` est conserve).
 - SDK MetaTrader5 5.0.6180 reel : collecte EURUSD reussie sur un terminal connecte.
   Plage `[2026-09-08T07:46:00.000316Z, 2026-09-08T07:51:00.000316Z)` :

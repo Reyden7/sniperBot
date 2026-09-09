@@ -33,6 +33,8 @@ from sniper.domain.broker import VolumeConstraints
 from sniper.domain.edge_validation import EdgeValidationReport
 from sniper.domain.evaluation import SignalEvaluationReport
 from sniper.domain.event_discovery import EventDiscoveryReport
+from sniper.domain.research_d10 import ResearchD10Report
+from sniper.domain.research_d11 import ResearchD11Report
 from sniper.domain.research_v2 import ResearchV2Report
 from sniper.domain.research_v3 import ResearchV3Report
 from sniper.domain.signal import SignalAnalysisReport
@@ -52,6 +54,12 @@ from sniper.evaluation.methodology_audit import (
     build_methodology_audit,
     render_methodology_audit,
 )
+from sniper.evaluation.research_d10 import (
+    ResearchD10Engine,
+    build_d10_freeze_manifest,
+    render_research_d10_report,
+)
+from sniper.evaluation.research_d11 import ResearchD11Engine, render_research_d11_report
 from sniper.evaluation.research_v2 import ResearchV2Engine, render_research_v2_report
 from sniper.evaluation.research_v3 import ResearchV3Engine, render_research_v3_report
 from sniper.features.engine import FeatureEngine
@@ -496,6 +504,169 @@ def collect_holdout_command(
         ):
             table.add_row(label, str(value))
         Console(markup=False).print(table)
+
+
+def print_research_d10_report(report: ResearchD10Report, human_path: Path) -> None:
+    freeze = report.internal_freeze_check["primary_candidates"]
+    table = Table(title="SNIPER Phase D.10 — THREE-OUTCOME RESEARCH", show_header=False)
+    table.add_column("Field")
+    table.add_column("Value")
+    for label, value in (
+        ("Conclusion", report.conclusion),
+        ("Observations", f"{report.performance.observations:,}"),
+        ("Freeze candidates", f"{freeze['candidate_count']:,}"),
+        ("Freeze BASE expectancy", freeze["BASE_net_expectancy_points"]),
+        ("Freeze STRESS expectancy", freeze["STRESS_net_expectancy_points"]),
+        ("Elapsed seconds", f"{report.performance.elapsed_seconds:.2f}"),
+        ("Report", human_path.resolve()),
+        ("HOLDOUT", "SEALED / NOT OPENED / NOT EVALUATED"),
+        ("Phase E / live", "NOT STARTED / DISABLED"),
+    ):
+        table.add_row(label, str(value))
+    Console(markup=False).print(table)
+
+
+@app.command("research-d10")
+def research_d10_command(
+    data: Annotated[Path, typer.Option(help="Racine du dataset RESEARCH EURUSD.")] = Path("data"),
+    start: Annotated[
+        str, typer.Option(help="Début RESEARCH UTC verrouillé.")
+    ] = "2026-06-10T00:00:00Z",
+    end: Annotated[
+        str, typer.Option(help="Fin RESEARCH UTC exclusive verrouillée.")
+    ] = "2026-09-08T00:00:00Z",
+    protocol: Annotated[Path, typer.Option(help="Protocole D.10 préenregistré.")] = Path(
+        "docs/research-protocol-d10.yaml"
+    ),
+    json_output: Annotated[bool, typer.Option("--json", help="Afficher aussi le JSON.")] = False,
+) -> None:
+    """Exécuter D.10 sur RESEARCH après écriture du freeze manifest."""
+    try:
+        start_utc, end_utc = parse_instant(start), parse_instant(end)
+        if not protocol.exists():
+            raise ValueError("The pre-registered D.10 protocol is required")
+        report_dir = data / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        stem = f"research-d10-{epoch_ms(start_utc)}-{epoch_ms(end_utc)}"
+        freeze_path = report_dir / f"{stem}-freeze-manifest.json"
+        freeze_manifest = build_d10_freeze_manifest(protocol)
+        freeze_path.write_text(json.dumps(freeze_manifest, indent=2), encoding="utf-8")
+        report = ResearchD10Engine().run(
+            data_root=data,
+            start_utc=start_utc,
+            end_utc=end_utc,
+            protocol_path=protocol,
+            freeze_manifest_path=freeze_path,
+        )
+        json_path = report_dir / f"{stem}.json"
+        human_path = report_dir / f"{stem}.md"
+        json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        human_path.write_text(render_research_d10_report(report), encoding="utf-8")
+    except (
+        ValidationError,
+        ValueError,
+        RuntimeError,
+        PermissionError,
+        InvalidOperation,
+        OSError,
+        AttributeError,
+        OverflowError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        message = safe_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"error": message, "holdout_opened": False}))
+        else:
+            typer.echo(f"SNIPER research-d10: {message}", err=True)
+        raise typer.Exit(2) from None
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        print_research_d10_report(report, human_path)
+
+
+def print_research_d11_report(report: ResearchD11Report, human_path: Path) -> None:
+    pooled = report.verdict_evidence["pooled_ranking"]
+    top5 = report.verdict_evidence["all_validation_top_5pct"]
+    table = Table(title="SNIPER Phase D.11 — RANKING AUDIT", show_header=False)
+    table.add_column("Field")
+    table.add_column("Value")
+    for label, value in (
+        ("Conclusion", report.conclusion),
+        ("Side-OOF observations", f"{report.performance.ranking_side_observations:,}"),
+        ("D.10 candidates reproduced", report.performance.d10_candidates_reproduced),
+        ("Pooled Spearman", pooled["spearman_predicted_EV"]),
+        ("Top 5% BASE", top5["BASE_expectancy"]),
+        ("Top 5% uplift", top5["uplift_vs_unconditional_BASE"]),
+        ("Elapsed seconds", f"{report.performance.elapsed_seconds:.2f}"),
+        ("Report", human_path.resolve()),
+        ("HOLDOUT", "SEALED / NOT OPENED / NOT EVALUATED"),
+        ("D.12 / Phase E / live", "NOT CREATED / NOT STARTED / DISABLED"),
+    ):
+        table.add_row(label, str(value))
+    Console(markup=False).print(table)
+
+
+@app.command("research-d11")
+def research_d11_command(
+    data: Annotated[Path, typer.Option(help="Racine du dataset RESEARCH EURUSD.")] = Path("data"),
+    start: Annotated[
+        str, typer.Option(help="Début RESEARCH UTC verrouillé.")
+    ] = "2026-06-10T00:00:00Z",
+    end: Annotated[
+        str, typer.Option(help="Fin RESEARCH UTC exclusive verrouillée.")
+    ] = "2026-09-08T00:00:00Z",
+    protocol: Annotated[
+        Path, typer.Option(help="Protocole D.11 diagnostique préenregistré.")
+    ] = Path("docs/research-protocol-d11.yaml"),
+    json_output: Annotated[bool, typer.Option("--json", help="Afficher aussi le JSON.")] = False,
+) -> None:
+    """Auditer le ranking D.10 sur RESEARCH, sans créer de règle de trading."""
+    try:
+        start_utc, end_utc = parse_instant(start), parse_instant(end)
+        if not protocol.exists():
+            raise ValueError("The pre-registered D.11 protocol is required")
+        report = ResearchD11Engine().run(
+            data_root=data,
+            start_utc=start_utc,
+            end_utc=end_utc,
+            protocol_path=protocol,
+            repository_root=Path(".").resolve(),
+        )
+        report_dir = data / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        stem = f"research-d11-{epoch_ms(start_utc)}-{epoch_ms(end_utc)}"
+        json_path = report_dir / f"{stem}.json"
+        human_path = report_dir / f"{stem}.md"
+        json_report = report.model_dump_json(indent=2)
+        human_report = render_research_d11_report(report)
+        json_path.write_text(json_report, encoding="utf-8")
+        human_path.write_text(human_report, encoding="utf-8")
+        (report_dir / "research-d11.json").write_text(json_report, encoding="utf-8")
+        (report_dir / "research-d11.md").write_text(human_report, encoding="utf-8")
+    except (
+        ValidationError,
+        ValueError,
+        RuntimeError,
+        PermissionError,
+        InvalidOperation,
+        OSError,
+        AttributeError,
+        OverflowError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        message = safe_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"error": message, "holdout_opened": False}))
+        else:
+            typer.echo(f"SNIPER research-d11: {message}", err=True)
+        raise typer.Exit(2) from None
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        print_research_d11_report(report, human_path)
 
 
 def print_backtest_report(result: BacktestResult) -> None:

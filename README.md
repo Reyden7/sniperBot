@@ -1,7 +1,8 @@
 # SNIPER
 
-Phases A à D.9 : fondation read-only, diagnostic broker 10 EUR, pipeline historique,
-backtester tick event-driven et moteurs de recherche V2/V3 EURUSD rejetés.
+Phases A à D.11 : fondation read-only, diagnostic broker 10 EUR, pipeline historique,
+backtester tick event-driven, V2/V3 rejetés, D.10 sans preuve suffisante et audit de
+ranking D.11 instable.
 Aucun ordre live n'est implémenté.
 
 Installation avec Python stable 3.14.x et uv :
@@ -212,3 +213,29 @@ probabilité que le target LONG soit touché avant son stop et probabilité équ
 pour SHORT. Le MetaGate choisit LONG, SHORT ou SKIP en fonction d'un seuil et d'un edge
 BASE préenregistrés. Toutes les features restent causales et le HOLDOUT demeure scellé.
 Voir [docs/research-v3.md](docs/research-v3.md).
+
+## Methodology Audit (Phase D.9A)
+
+Le replay V3 applique désormais une purge propre à chaque configuration avant chaque
+fold : une ligne TRAIN n'est retenue que si `timestamp + timeout <= validation_start`.
+Les 16 frontières configuration/fold sont auditées dans le rapport. Le replay purgé
+conserve le verdict `V3_RESEARCH_REJECTED`. Le diagnostic montre séparément
+`TARGET_FIRST`, `STOP_FIRST` et `NEITHER`; il ne modifie pas la formule MetaGate V3
+préenregistrée. D.10 est uniquement spécifiée dans
+[docs/d10-three-outcome-spec.md](docs/d10-three-outcome-spec.md), sans entraînement.
+
+## Three-Outcome Expected Value Engine (Phase D.10)
+
+D.10 modélise séparément `TARGET_FIRST`, `STOP_FIRST` et `NEITHER` pour LONG et SHORT,
+puis combine les probabilités avec les payoffs BASE moyens appris dans TRAIN. Le buffer
+d'incertitude est appris dans des folds nested purgés et la décision ne dépend plus du
+seuil V3 `P(target)>=0,60`. Le contrôle interne produit seulement quatre candidats : le
+verdict est `D10_INSUFFICIENT_EVIDENCE`. Voir [docs/research-d10.md](docs/research-d10.md).
+
+## Predictive Ranking & Regime Stability Audit (Phase D.11)
+
+D.11 reproduit 111 136 prédictions side-OOF D.10 sur le seul dataset RESEARCH. Le top
+5 % agrégé reste négatif après coûts BASE (-7,29 points) et sa légère amélioration
+(+0,09 point) change de signe dans le contrôle interne gelé. La corrélation Spearman
+observation-level est négative (-0,0267). Verdict : `D11_UNSTABLE_RANKING_SIGNAL`.
+Aucun seuil n'est créé. Voir [docs/research-d11.md](docs/research-d11.md).

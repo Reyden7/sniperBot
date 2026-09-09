@@ -92,9 +92,7 @@ def test_purged_walk_forward_requires_complete_train_labels_before_validation(
         minimum_target_to_base_cost=2,
     )
 
-    purged_folds, audit = purge_v3_training_labels(
-        frame, folds, reports, configuration
-    )
+    purged_folds, audit = purge_v3_training_labels(frame, folds, reports, configuration)
 
     assert [item.purged_observations for item in audit] == [expected_purged] * 4
     assert all(item.invariant_passed for item in audit)

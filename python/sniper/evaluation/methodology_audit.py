@@ -14,9 +14,7 @@ def _primary_side(report: ResearchV3Report, side: str) -> SideOutcomeReport:
 
 
 def _primary_combined(report: ResearchV3Report) -> CombinedBarrierReport:
-    return next(
-        item for item in report.combined_results if item.configuration_id == "B02_PRIMARY"
-    )
+    return next(item for item in report.combined_results if item.configuration_id == "B02_PRIMARY")
 
 
 def _pair(original: object, purged: object) -> dict[str, object]:
@@ -52,9 +50,7 @@ def build_methodology_audit(
     if not all(item.invariant_passed for item in purged.purge_audit):
         raise RuntimeError("At least one purged fold violates the label boundary")
     original_long, purged_long = _primary_side(original, "LONG"), _primary_side(purged, "LONG")
-    original_short, purged_short = _primary_side(original, "SHORT"), _primary_side(
-        purged, "SHORT"
-    )
+    original_short, purged_short = _primary_side(original, "SHORT"), _primary_side(purged, "SHORT")
     original_combined, purged_combined = _primary_combined(original), _primary_combined(purged)
     original_bytes = original_report_path.read_bytes()
     comparison: dict[str, Any] = {

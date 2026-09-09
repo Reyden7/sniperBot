@@ -426,21 +426,15 @@ def purge_v3_training_labels(
     timeout_us = configuration.timeout_seconds * MICROSECONDS
     purged_folds: list[tuple[np.ndarray, np.ndarray]] = []
     audit: list[PurgedFoldAudit] = []
-    for (train_indices, validation_indices), fold_report in zip(
-        folds, fold_reports, strict=True
-    ):
-        validation_start_us = int(
-            fold_report.validation_start_utc.timestamp() * MICROSECONDS
-        )
+    for (train_indices, validation_indices), fold_report in zip(folds, fold_reports, strict=True):
+        validation_start_us = int(fold_report.validation_start_utc.timestamp() * MICROSECONDS)
         label_end_us = timestamps_us[train_indices] + timeout_us
         keep = label_end_us <= validation_start_us
         retained = train_indices[keep]
         max_label_end_us = (
             int(np.max(timestamps_us[retained] + timeout_us)) if len(retained) else None
         )
-        invariant_passed = (
-            max_label_end_us is None or max_label_end_us <= validation_start_us
-        )
+        invariant_passed = max_label_end_us is None or max_label_end_us <= validation_start_us
         if not invariant_passed:
             raise RuntimeError("Purged walk-forward label boundary invariant failed")
         purged_folds.append((retained, validation_indices))
@@ -1146,6 +1140,7 @@ def render_research_v3_report(report: ResearchV3Report) -> str:
             "- Modèle primaire : régression logistique préenregistrée",
             "- Configuration primaire : B02_PRIMARY préenregistrée",
             "- Scénario principal : BASE",
+            f"- Politique de purge TRAIN : {report.purge_policy}",
             "- Sizing : RISK_ENGINE_ONLY",
             "- Trading live : DÉSACTIVÉ",
             "- Phase E : NON COMMENCÉE",
