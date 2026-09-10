@@ -19,7 +19,7 @@ from sniper.binance.qualification import (
 )
 from sniper.binance.settings import BinanceSettings
 from sniper.binance.strategy_engine import BinanceStrategyEngine, bars_from_frame
-from sniper.binance.universe import CryptoUniverseScanner
+from sniper.binance.universe import LowCostCryptoUniverseScanner
 
 
 def _account_fee_snapshot(data_root: Path) -> tuple[Decimal, Decimal]:
@@ -90,7 +90,7 @@ def run_second_delivery(
             raise ValueError("qualification universe freeze protocol mismatch")
         selected = [UniverseCandidate.model_validate(item) for item in frozen.get("candidates", [])]
     else:
-        universe, _, _, _ = CryptoUniverseScanner(client, settings).scan()
+        universe, _, _, _ = LowCostCryptoUniverseScanner(client, settings).scan()
         selected = _qualification_candidates(universe)
     symbols = tuple(sorted(item.symbol for item in selected))
     if not symbols:

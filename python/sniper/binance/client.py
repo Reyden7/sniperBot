@@ -88,6 +88,7 @@ class BinanceReadOnlyClient:
         self.transport = transport or UrllibTransport()
         self._sleep = sleep
         self._clock_offset_ms = 0
+        self._last_clock_sync_monotonic: float | None = None
 
     def _decode(self, response: TransportResponse) -> Any:
         try:
@@ -162,7 +163,15 @@ class BinanceReadOnlyClient:
         after = int(time.time() * 1000)
         midpoint = (before + after) // 2
         self._clock_offset_ms = server - midpoint
+        self._last_clock_sync_monotonic = time.monotonic()
         return self._clock_offset_ms
+
+    def _ensure_clock_synchronized(self) -> None:
+        if (
+            self._last_clock_sync_monotonic is None
+            or time.monotonic() - self._last_clock_sync_monotonic > 30
+        ):
+            self.synchronize_clock()
 
     def exchange_info(self) -> dict[str, Any]:
         return dict(self._get("/api/v3/exchangeInfo"))
@@ -184,8 +193,8 @@ class BinanceReadOnlyClient:
         start_time_ms: int | None = None,
         end_time_ms: int | None = None,
     ) -> list[list[Any]]:
-        if interval not in {"1m", "5m", "15m"}:
-            raise ValueError("only M1/M5/M15 intervals are supported")
+        if interval not in {"1m", "5m", "15m", "30m", "1h", "4h"}:
+            raise ValueError("unsupported Binance Spot kline interval")
         if not 1 <= limit <= 1000:
             raise ValueError("kline limit must be between 1 and 1000")
         payload = self._get(
@@ -210,11 +219,11 @@ class BinanceReadOnlyClient:
         return dict(self._get("/api/v3/depth", {"symbol": symbol, "limit": limit}))
 
     def account_information(self) -> dict[str, Any]:
-        self.synchronize_clock()
+        self._ensure_clock_synchronized()
         return dict(self._get("/api/v3/account", signed=True, market_data=False))
 
     def trade_fees(self, symbol: str | None = None) -> list[dict[str, Any]]:
-        self.synchronize_clock()
+        self._ensure_clock_synchronized()
         payload = self._get(
             "/sapi/v1/asset/tradeFee",
             {"symbol": symbol},
@@ -224,7 +233,7 @@ class BinanceReadOnlyClient:
         return [dict(item) for item in payload]
 
     def commission_rates(self, symbol: str) -> dict[str, Any]:
-        self.synchronize_clock()
+        self._ensure_clock_synchronized()
         return dict(
             self._get(
                 "/api/v3/account/commission",

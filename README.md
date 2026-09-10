@@ -1,7 +1,10 @@
 # SNIPER
 
 La mission active est désormais un moteur de recherche multi-crypto **Binance Spot**,
-centré sur M5 et l'espérance nette après frais. Le deuxième livrable reste strictement
+centré sur M5 et le rapport mouvement tradable / coût aller-retour. Le scanner couvre
+dynamiquement les paires liquides contre EUR, USDT, USDC et FDUSD, compare toutes les
+quotes d'un même actif et ne tient jamais compte du prix nominal dans son classement.
+Le deuxième livrable reste strictement
 `READ_ONLY` : Futures, margin, levier, endpoint d'ordre et LIVE sont absents. Le sizing
 présent est exclusivement simulé par le Risk Engine du backtester.
 
@@ -22,6 +25,10 @@ Sans clés, les endpoints publics fonctionnent et les frais sont un fallback con
 non nul et explicitement marqué comme non spécifique au compte. Avec
 `BINANCE_API_KEY` et `BINANCE_API_SECRET`, `binance-check` lit le compte et les frais
 réels via des endpoints signés de lecture. Les secrets ne sont jamais écrits.
+Les modes `TAKER_ENTRY_TAKER_EXIT` et `MAKER_ENTRY_TAKER_EXIT` sont chiffrés séparément.
+Le second n'est sélectionnable qu'avec une simulation de fill maker explicitement
+queue-aware et post-only ; une simple hypothèse de fill LIMIT est refusée. L'objectif
+quotidien demeure +1 %, sans aucun trade forcé.
 
 Voir [l'architecture du pivot](docs/binance-pivot-architecture.md), le
 [protocole gelé](docs/binance-qualification-protocol.md) et le

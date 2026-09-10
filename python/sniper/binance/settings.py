@@ -48,8 +48,71 @@ class BinanceSettings(BaseSettings):
     uncertainty_buffer_bps: Decimal = Field(
         Decimal("2"), ge=0, validation_alias="BINANCE_UNCERTAINTY_BUFFER_BPS"
     )
-    preferred_base_assets: tuple[str, ...] = ("BTC", "ETH", "SOL", "BNB", "XRP")
-    eligible_quote_assets: tuple[str, ...] = ("EUR", "USDC", "USDT")
+    preferred_base_assets: tuple[str, ...] = (
+        "BTC",
+        "ETH",
+        "SOL",
+        "XRP",
+        "BNB",
+        "DOGE",
+        "SHIB",
+        "PEPE",
+        "POL",
+        "ADA",
+        "TRX",
+        "LINK",
+        "AVAX",
+        "SUI",
+        "XLM",
+    )
+    eligible_quote_assets: tuple[str, ...] = ("EUR", "USDT", "USDC", "FDUSD")
+    minimum_quote_volume_24h: Decimal = Field(
+        Decimal("500000"),
+        ge=0,
+        validation_alias="BINANCE_MIN_QUOTE_VOLUME_24H",
+    )
+    minimum_top20_depth_quote: Decimal = Field(
+        Decimal("500"),
+        ge=0,
+        validation_alias="BINANCE_MIN_TOP20_DEPTH_QUOTE",
+    )
+    slippage_reference_notional: Decimal = Field(
+        Decimal("500"),
+        gt=0,
+        validation_alias="BINANCE_SLIPPAGE_REFERENCE_NOTIONAL",
+    )
+    maximum_diagnostic_pairs: int = Field(
+        100,
+        ge=1,
+        le=500,
+        validation_alias="BINANCE_MAX_DIAGNOSTIC_PAIRS",
+    )
+    maker_fill_minimum_observations: int = Field(
+        100,
+        ge=1,
+        validation_alias="BINANCE_MAKER_FILL_MIN_OBSERVATIONS",
+    )
+    maker_fill_minimum_probability: Decimal = Field(
+        Decimal("0.50"),
+        ge=0,
+        le=1,
+        validation_alias="BINANCE_MAKER_FILL_MIN_PROBABILITY",
+    )
+    v2_minimum_move_to_cost_ratio: Decimal = Field(
+        Decimal("3.0"),
+        gt=0,
+        validation_alias="BINANCE_V2_MIN_MOVE_TO_COST_RATIO",
+    )
+    v2_maximum_spread_p95_bps: Decimal = Field(
+        Decimal("20"),
+        gt=0,
+        validation_alias="BINANCE_V2_MAX_SPREAD_P95_BPS",
+    )
+    v2_maximum_slippage_500_bps: Decimal = Field(
+        Decimal("10"),
+        gt=0,
+        validation_alias="BINANCE_V2_MAX_SLIPPAGE_500_BPS",
+    )
     starting_capital_eur: Decimal | None = Field(
         None, gt=0, validation_alias="STARTING_CAPITAL_EUR"
     )

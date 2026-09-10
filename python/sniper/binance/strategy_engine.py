@@ -22,6 +22,8 @@ class SetupType(StrEnum):
     MOMENTUM_PULLBACK = "MOMENTUM_PULLBACK"
     BREAKOUT_RETEST = "BREAKOUT_RETEST"
     RANGE_MEAN_REVERSION = "RANGE_MEAN_REVERSION"
+    TREND_PULLBACK = "TREND_PULLBACK"
+    BREAKOUT_EXPANSION = "BREAKOUT_EXPANSION"
 
 
 @dataclass(frozen=True)
@@ -80,8 +82,8 @@ def bars_from_frame(frame: pl.DataFrame) -> dict[str, list[ResearchBar]]:
 
 def aggregate_bars(m1: list[ResearchBar], minutes: int) -> list[ResearchBar]:
     """Build complete UTC-aligned bars; incomplete groups are discarded."""
-    if minutes not in {5, 15}:
-        raise ValueError("only M5 and M15 aggregation is supported")
+    if minutes not in {5, 15, 60}:
+        raise ValueError("only M5, M15 and H1 aggregation is supported")
     grouped: dict[datetime, list[ResearchBar]] = {}
     for bar in m1:
         aligned = bar.timestamp_utc.replace(
@@ -278,6 +280,142 @@ class BinanceStrategyEngine:
             if signal is not None and signal.invalid_level < signal.entry_reference:
                 signals.append(signal)
         return m5, signals
+
+
+class BinanceV2StrategyEngine:
+    """Frozen H1/M15/M5 long-only V2 with no mean-reversion setup."""
+
+    minimum_gross_move_pct = 0.60
+    minimum_reward_to_risk = 2.0
+    minimum_move_to_cost_ratio = 3.0
+
+    def generate(
+        self,
+        m1: list[ResearchBar],
+        *,
+        total_round_trip_cost_pct: float,
+    ) -> tuple[list[ResearchBar], list[StrategySignal], dict[str, int]]:
+        rejections = {
+            "REGIME": 0,
+            "STRUCTURE": 0,
+            "NO_SETUP": 0,
+            "GROSS_MOVE_LT_0_60": 0,
+            "MOVE_TO_COST_LT_3": 0,
+            "RR_LT_2": 0,
+        }
+        if len(m1) < 1500:
+            return [], [], rejections
+        m5 = aggregate_bars(m1, 5)
+        m15 = aggregate_bars(m1, 15)
+        h1 = aggregate_bars(m1, 60)
+        if len(m5) < 50 or len(m15) < 30 or len(h1) < 25:
+            return m5, [], rejections
+        m5_close = np.asarray([bar.close for bar in m5], dtype=float)
+        m5_high = np.asarray([bar.high for bar in m5], dtype=float)
+        m5_low = np.asarray([bar.low for bar in m5], dtype=float)
+        m5_volume = np.asarray([bar.quote_volume for bar in m5], dtype=float)
+        m5_fast = _ema(m5_close, 9)
+        m5_atr = _atr(m5)
+        volume_median = _rolling(m5_volume, 20, "median")
+        m15_close = np.asarray([bar.close for bar in m15], dtype=float)
+        m15_fast = _ema(m15_close, 9)
+        m15_slow = _ema(m15_close, 21)
+        h1_close = np.asarray([bar.close for bar in h1], dtype=float)
+        h1_fast = _ema(h1_close, 9)
+        h1_slow = _ema(h1_close, 21)
+        m15_cursor = 0
+        h1_cursor = 0
+        signals: list[StrategySignal] = []
+        for index in range(25, len(m5) - 1):
+            signal_time = m5[index].timestamp_utc + timedelta(minutes=5)
+            while (
+                m15_cursor + 1 < len(m15)
+                and m15[m15_cursor + 1].timestamp_utc + timedelta(minutes=15) <= signal_time
+            ):
+                m15_cursor += 1
+            while (
+                h1_cursor + 1 < len(h1)
+                and h1[h1_cursor + 1].timestamp_utc + timedelta(hours=1) <= signal_time
+            ):
+                h1_cursor += 1
+            if m15_cursor < 21 or h1_cursor < 21:
+                continue
+            h1_up = (
+                h1_fast[h1_cursor] > h1_slow[h1_cursor]
+                and h1_fast[h1_cursor] > h1_fast[h1_cursor - 3]
+                and h1_close[h1_cursor] > h1_slow[h1_cursor]
+            )
+            if not h1_up:
+                rejections["REGIME"] += 1
+                continue
+            m15_up = (
+                m15_fast[m15_cursor] > m15_slow[m15_cursor]
+                and m15_close[m15_cursor] > m15_fast[m15_cursor]
+            )
+            if not m15_up:
+                rejections["STRUCTURE"] += 1
+                continue
+            current = m5[index]
+            previous = m5[index - 1]
+            setup: SetupType | None = None
+            reasons: tuple[str, ...] = ()
+            breakout_level = float(np.max(m5_high[index - 20 : index]))
+            breakout = (
+                current.close > breakout_level
+                and current.close > current.open
+                and current.quote_volume >= volume_median[index] * 1.20
+            )
+            pullback = (
+                current.low <= m5_fast[index] * 1.0015
+                and current.close > m5_fast[index]
+                and current.close > previous.close
+                and current.quote_volume >= volume_median[index] * 0.75
+            )
+            if breakout:
+                setup = SetupType.BREAKOUT_EXPANSION
+                reasons = ("H1_TREND_UP", "M15_STRUCTURE_UP", "M5_BREAKOUT", "M5_VOLUME")
+            elif pullback:
+                setup = SetupType.TREND_PULLBACK
+                reasons = ("H1_TREND_UP", "M15_STRUCTURE_UP", "M5_PULLBACK_RESUMPTION")
+            else:
+                rejections["NO_SETUP"] += 1
+                continue
+            stop = min(m5_low[index - 2 : index + 1]) - m5_atr[index] * 0.10
+            risk = current.close - stop
+            if risk <= 0:
+                rejections["RR_LT_2"] += 1
+                continue
+            target_distance = max(risk * self.minimum_reward_to_risk, current.close * 0.006)
+            gross_move_pct = target_distance / current.close * 100
+            reward_to_risk = target_distance / risk
+            if gross_move_pct < self.minimum_gross_move_pct:
+                rejections["GROSS_MOVE_LT_0_60"] += 1
+                continue
+            if (
+                gross_move_pct / max(total_round_trip_cost_pct, 1e-12)
+                < self.minimum_move_to_cost_ratio
+            ):
+                rejections["MOVE_TO_COST_LT_3"] += 1
+                continue
+            if reward_to_risk < self.minimum_reward_to_risk:
+                rejections["RR_LT_2"] += 1
+                continue
+            signals.append(
+                StrategySignal(
+                    symbol=current.symbol,
+                    timestamp_utc=signal_time,
+                    side="BUY",
+                    setup_type=setup,
+                    regime=MarketRegime.TREND_UP,
+                    entry_reference=current.close,
+                    invalid_level=stop,
+                    target_reference=current.close + target_distance,
+                    atr=m5_atr[index],
+                    confidence=0.75 if setup == SetupType.BREAKOUT_EXPANSION else 0.70,
+                    reason=reasons,
+                )
+            )
+        return m5, signals, rejections
 
 
 def annualized_sharpe(daily_returns: list[float]) -> float:

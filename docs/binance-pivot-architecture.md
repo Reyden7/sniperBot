@@ -24,17 +24,18 @@ Official Spot WebSocket ─────> aggTrade / bookTicker / kline 1m,5m,15m
 Canonical UTC models ────────> raw immutable Parquet parts
                  │             normalized deduplicated Parquet parts
                  v
-CryptoUniverseScanner ───────> one most-liquid quote per priority base
-                 │             spread, depth, volume, volatility, min order
+LowCostCryptoUniverseScanner > all sufficiently-liquid EUR/USDT/USDC/FDUSD pairs
+                 │             spread, walked depth, volume, movement, exchange filters
                  v
-BinanceCostModel ────────────> explicit cost and net-edge ranking proxy
+BinanceCostModel ────────────> taker/taker and maker/taker cost, ratio and net edge
 ```
 
-Le choix de la quote n'utilise aucun suffixe codé en dur. Pour une même base, le scanner
-compare le volume 24 h exprimé dans l'actif de base, seule unité directement comparable
-entre ses paires. Toutes les quotes Spot réellement retournées sont conservées dans le
-rapport. En présence d'un compte authentifié, la compatibilité tient aussi compte du
-solde disponible et de `canTrade`.
+Le choix de la quote n'utilise aucun suffixe préféré : toutes les paires `TRADING` contre
+EUR, USDT, USDC et FDUSD sont comparées. BTC, ETH, SOL, XRP, BNB, DOGE, SHIB, PEPE, POL,
+ADA, TRX, LINK, AVAX, SUI et XLM sont explicitement couverts, puis les autres bases
+franchissant les seuils de liquidité rejoignent l'univers. Le prix nominal n'entre dans
+aucun score. En présence d'un compte authentifié, la compatibilité tient aussi compte du
+solde disponible et les détails standard/spéciaux/taxe/remise visibles sont conservés.
 
 ## Adaptateur REST en lecture seule
 
@@ -60,13 +61,19 @@ configurée, un fallback non nul et configurable est utilisé avec la provenance
 `CONFIGURED_FALLBACK`; il ne doit jamais être présenté comme le tarif réel du compte.
 
 ```text
-EXPECTED_NET_EDGE
+EXPECTED_NET_EDGE_TAKER
   = M5_EXPECTED_GROSS_MOVE_PROXY
   - OBSERVED_BID_ASK_SPREAD
   - TWO_SIDED_EXPECTED_SLIPPAGE
   - ENTRY_FEE
   - EXIT_FEE
 ```
+
+`EXPECTED_NET_EDGE_MAKER` retranche une entrée maker, une sortie taker, un demi-spread,
+le slippage de sortie et l'adverse selection mesurée. Il reste non exécutable sans une
+simulation de fill externe ayant modélisé file d'attente et post-only sur un échantillon
+suffisant. Une promotion n'est jamais codée en dur : seuls les frais courants renvoyés
+par le compte, ou le fallback conservateur explicitement marqué, sont utilisés.
 
 Le buffer d'incertitude est séparé. Cette valeur sert seulement au classement de
 l'univers dans ce lot : elle n'est ni une stratégie qualifiée ni une instruction d'ordre.

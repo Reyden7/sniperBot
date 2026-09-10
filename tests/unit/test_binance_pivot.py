@@ -23,10 +23,11 @@ from sniper.binance.market_data import (
     normalize_kline,
     normalize_rest_agg_trade,
 )
+from sniper.binance.models import MakerFillSimulation
 from sniper.binance.service import account_permission_status
 from sniper.binance.settings import BinanceSettings
 from sniper.binance.storage import BinanceParquetStore
-from sniper.binance.universe import CryptoUniverseScanner
+from sniper.binance.universe import CryptoUniverseScanner, LowCostCryptoUniverseScanner
 
 
 def symbol_payload(symbol: str = "BTCUSDC", base: str = "BTC", quote: str = "USDC"):
@@ -72,6 +73,13 @@ def test_binance_settings_are_read_only_and_require_complete_credentials(monkeyp
     monkeypatch.setenv("BINANCE_API_KEY", "only-key")
     with pytest.raises(ValidationError, match="BINANCE_API_SECRET"):
         BinanceSettings(_env_file=None)
+
+
+def test_low_cost_universe_defaults_cover_requested_assets_and_quotes():
+    settings = BinanceSettings(_env_file=None)
+    requested = {"DOGE", "SHIB", "PEPE", "POL", "ADA", "TRX", "LINK", "AVAX", "SUI", "XLM"}
+    assert requested <= set(settings.preferred_base_assets)
+    assert settings.eligible_quote_assets == ("EUR", "USDT", "USDC", "FDUSD")
 
 
 def test_account_capabilities_are_never_reported_as_api_key_permissions():
@@ -120,6 +128,24 @@ def test_binance_cost_model_uses_spread_two_fees_and_two_sided_slippage():
     assert estimate.expected_net_edge_pct == Decimal("0.080")
     assert estimate.acceptable is True
     assert estimate.fee_source == "CONFIGURED_FALLBACK"
+
+
+def test_cost_model_compares_taker_taker_with_maker_taker():
+    settings = BinanceSettings(_env_file=None)
+    comparison = BinanceCostModel(
+        fallback_fee_schedule("DOGEFDUSD", settings),
+        slippage_bps_per_side=Decimal("1"),
+        uncertainty_buffer_bps=Decimal("2"),
+    ).compare_execution_modes(
+        expected_gross_move_pct=Decimal("0.50"),
+        bid=Decimal("99.90"),
+        ask=Decimal("100.10"),
+    )
+    assert comparison.taker_taker.estimated_cost_pct == Decimal("0.420")
+    assert comparison.maker_taker.estimated_cost_pct == Decimal("0.310")
+    assert (
+        comparison.maker_taker.expected_net_edge_pct > comparison.taker_taker.expected_net_edge_pct
+    )
 
 
 def test_account_trade_fee_payload_is_used_without_zero_fee_assumption():
@@ -310,6 +336,30 @@ def test_universe_selects_most_liquid_quote_dynamically_without_account():
     assert all(item.available_quote_balance is None for item in candidates)
     assert all(item.tick_size == Decimal("0.01") for item in candidates)
     assert "CONFIGURED_NONZERO_FEE_FALLBACK_USED" in problems
+    assert all(item.move_to_cost_ratio_taker > 0 for item in candidates)
+    assert all(item.preferred_execution_mode == "TAKER_ENTRY_TAKER_EXIT" for item in candidates)
+    assert all(item.maker_fill_simulation_credible is False for item in candidates)
+
+
+def test_maker_mode_requires_credible_queue_aware_fill_simulation():
+    evidence = MakerFillSimulation(
+        symbol="BTCUSDC",
+        observations=200,
+        fill_probability=Decimal("0.70"),
+        median_time_to_fill_ms=Decimal("250"),
+        adverse_selection_pct=Decimal("0.01"),
+        queue_position_modeled=True,
+        post_only_modeled=True,
+    )
+    candidates, _, _, _ = LowCostCryptoUniverseScanner(
+        FakeMarketClient(),
+        BinanceSettings(_env_file=None),
+        maker_fill_simulations={"BTCUSDC": evidence},
+    ).scan()
+    by_symbol = {item.symbol: item for item in candidates}
+    assert by_symbol["BTCUSDC"].maker_fill_simulation_credible is True
+    assert by_symbol["BTCUSDC"].preferred_execution_mode == "MAKER_ENTRY_TAKER_EXIT"
+    assert by_symbol["ETHUSDC"].preferred_execution_mode == "TAKER_ENTRY_TAKER_EXIT"
 
 
 class FakeAuthenticatedMultiQuoteClient(FakeMarketClient):
@@ -352,9 +402,79 @@ class FakeAuthenticatedMultiQuoteClient(FakeMarketClient):
 
     def trade_fees(self):
         return [
-            {"symbol": symbol, "makerCommission": "0.001", "takerCommission": "0.001"}
+            {
+                "symbol": symbol,
+                "makerCommission": "0" if symbol == "BTCUSDC" else "0.001",
+                "takerCommission": "0.001",
+            }
             for symbol in ("BTCEUR", "BTCUSDC")
         ]
+
+    def commission_rates(self, symbol):
+        return {
+            "symbol": symbol,
+            "standardCommission": {"maker": "0.001", "taker": "0.001"},
+            "specialCommission": {"maker": "0", "taker": "0"},
+            "taxCommission": {"maker": "0", "taker": "0"},
+            "discount": {
+                "enabledForAccount": True,
+                "enabledForSymbol": symbol == "BTCUSDC",
+                "discountAsset": "BNB",
+                "discount": "0.25",
+            },
+        }
+
+
+class FakeExpandedUniverseClient(FakeMarketClient):
+    symbols = ("DOGEEUR", "DOGEUSDT", "DOGEUSDC", "DOGEFDUSD", "NEARUSDT", "PENNYUSDT")
+
+    def exchange_info(self):
+        return {
+            "symbols": [
+                symbol_payload(symbol, "DOGE", symbol.removeprefix("DOGE"))
+                for symbol in self.symbols[:4]
+            ]
+            + [
+                symbol_payload("NEARUSDT", "NEAR", "USDT"),
+                symbol_payload("PENNYUSDT", "PENNY", "USDT"),
+            ]
+        }
+
+    def book_tickers(self):
+        return [
+            {
+                "symbol": symbol,
+                "bidPrice": "0.0999",
+                "bidQty": "100000",
+                "askPrice": "0.1001",
+                "askQty": "100000",
+            }
+            for symbol in self.symbols
+        ]
+
+    def ticker_24h(self):
+        return [
+            {
+                "symbol": symbol,
+                "volume": "10000000",
+                "quoteVolume": "100" if symbol == "PENNYUSDT" else "1000000",
+                "count": 1000,
+            }
+            for symbol in self.symbols
+        ]
+
+    def depth(self, symbol, limit):
+        return {"bids": [["0.0999", "100000"]], "asks": [["0.1001", "100000"]]}
+
+
+def test_scanner_compares_all_quotes_and_adds_other_liquid_spot_assets():
+    candidates, quotes, _, _ = LowCostCryptoUniverseScanner(
+        FakeExpandedUniverseClient(), BinanceSettings(_env_file=None)
+    ).scan()
+    symbols = {item.symbol for item in candidates}
+    assert {"DOGEEUR", "DOGEUSDT", "DOGEUSDC", "DOGEFDUSD", "NEARUSDT"} <= symbols
+    assert "PENNYUSDT" not in symbols
+    assert quotes == ("EUR", "FDUSD", "USDC", "USDT")
 
 
 def test_authenticated_universe_keeps_all_quotes_and_reports_balance_compatibility(monkeypatch):
@@ -372,4 +492,7 @@ def test_authenticated_universe_keeps_all_quotes_and_reports_balance_compatibili
     assert by_symbol["BTCUSDC"].available_quote_balance is None
     assert by_symbol["BTCUSDC"].compatible_with_available_balance is False
     assert all(item.fee_source == "BINANCE_ACCOUNT_API" for item in candidates)
+    assert by_symbol["BTCUSDC"].maker_fee == Decimal(0)
+    assert by_symbol["BTCUSDC"].special_pricing_visible is True
+    assert by_symbol["BTCUSDC"].commission_details["discount"]["discountAsset"] == "BNB"
     assert "CONFIGURED_NONZERO_FEE_FALLBACK_USED" not in problems

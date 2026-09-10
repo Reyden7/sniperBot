@@ -29,7 +29,8 @@ from sniper.binance.service import (
     render_binance_report,
 )
 from sniper.binance.settings import BinanceSettings
-from sniper.binance.universe import CryptoUniverseScanner
+from sniper.binance.universe import LowCostCryptoUniverseScanner
+from sniper.binance.v2_delivery import render_binance_v2, run_binance_v2
 from sniper.config import BrokerCheckConfig, Settings
 from sniper.data.backtest_source import load_parquet_ticks
 from sniper.data.collector import DataQualityReport, collect_ticks
@@ -918,13 +919,17 @@ def research_d14_command(
 
 
 def _print_crypto_universe(symbols: list[UniverseCandidate]) -> None:
-    table = Table(title="SNIPER Binance Spot — Dynamic Crypto Universe")
+    table = Table(title="SNIPER Binance Spot — Low-Cost Liquid Universe")
     table.add_column("Rank", justify="right")
     table.add_column("Symbol")
     table.add_column("Quote")
     table.add_column("Spread bps", justify="right")
-    table.add_column("M5 vol %", justify="right")
-    table.add_column("Net edge proxy %", justify="right")
+    table.add_column("Move %", justify="right")
+    table.add_column("Cost T/T %", justify="right")
+    table.add_column("Ratio T/T", justify="right")
+    table.add_column("Net T/T %", justify="right")
+    table.add_column("Net M/T %", justify="right")
+    table.add_column("Mode")
     table.add_column("Min order", justify="right")
     table.add_column("Fee source")
     for item in symbols:
@@ -933,8 +938,12 @@ def _print_crypto_universe(symbols: list[UniverseCandidate]) -> None:
             item.symbol,
             item.quote_asset,
             f"{item.spread_bps:.4f}",
-            f"{item.realized_volatility_m5_pct:.6f}",
-            f"{item.expected_net_edge_pct:.6f}",
+            f"{item.expected_move_pct:.6f}",
+            f"{item.taker_taker_round_trip_cost_pct:.6f}",
+            f"{item.move_to_cost_ratio_taker:.3f}",
+            f"{item.expected_net_edge_taker_pct:.6f}",
+            f"{item.expected_net_edge_maker_pct:.6f}",
+            item.preferred_execution_mode or "NO_TRADE",
             str(item.minimum_order_at_ask_quote),
             item.fee_source,
         )
@@ -999,10 +1008,10 @@ def binance_check_command(
 def crypto_universe_command(
     json_output: Annotated[bool, typer.Option("--json", help="Afficher le JSON.")] = False,
 ) -> None:
-    """Classer dynamiquement les paires Spot liquides des bases prioritaires."""
+    """Classer toutes les paires Spot liquides par mouvement/coût net."""
     try:
         settings = BinanceSettings()
-        symbols, quote_assets, account, problems = CryptoUniverseScanner(
+        symbols, quote_assets, account, problems = LowCostCryptoUniverseScanner(
             BinanceReadOnlyClient(settings), settings
         ).scan()
     except (ValidationError, BinanceApiError, ValueError, OSError, KeyError, TypeError) as exc:
@@ -1050,7 +1059,7 @@ def crypto_collect_command(
                 dict.fromkeys(item.strip().upper() for item in symbols.split(",") if item.strip())
             )
         else:
-            universe, _, _, _ = CryptoUniverseScanner(client, settings).scan()
+            universe, _, _, _ = LowCostCryptoUniverseScanner(client, settings).scan()
             selected = tuple(item.symbol for item in universe)
         if not selected:
             raise ValueError("no dynamically eligible Binance Spot symbol")
@@ -1150,6 +1159,69 @@ def crypto_backtest_command(
             ("Signals", f"{report.signal_observations:,}"),
             ("Fee source", report.account_fee_source),
             ("Human report", human_path.resolve()),
+            ("Order endpoints / LIVE", "ABSENT / DISABLED"),
+        ):
+            table.add_row(label, str(value))
+        Console(markup=False).print(table)
+
+
+@app.command("binance-v2")
+def binance_v2_command(
+    data: Annotated[Path, typer.Option(help="Racine des données SNIPER.")] = Path("data"),
+    start: Annotated[str, typer.Option(help="Début UTC du replay V2.")] = ("2026-06-10T00:00:00Z"),
+    end: Annotated[str, typer.Option(help="Fin UTC exclusive du replay V2.")] = (
+        "2026-09-08T00:00:00Z"
+    ),
+    collect_history: Annotated[bool, typer.Option("--collect-history/--existing-history")] = True,
+    json_output: Annotated[bool, typer.Option("--json", help="Afficher le JSON final.")] = False,
+) -> None:
+    """Geler le TOP10 low-cost puis rejouer Binance V2, strictement sans ordre."""
+    try:
+        settings = BinanceSettings()
+        report, trades = run_binance_v2(
+            client=BinanceReadOnlyClient(settings),
+            settings=settings,
+            data_root=data,
+            start_utc=parse_instant(start),
+            end_utc=parse_instant(end),
+            collect_history=collect_history,
+            progress=lambda message: typer.echo(message, err=True),
+        )
+        report_dir = data / "binance" / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        json_path = report_dir / "binance-v2-final.json"
+        human_path = Path("docs/binance-v2-final.md")
+        trades_path = data / "binance" / "backtests" / "binance-v2-base-trades.json"
+        trades_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        human_path.write_text(render_binance_v2(report), encoding="utf-8")
+        trades_path.write_text(
+            json.dumps([trade.model_dump(mode="json") for trade in trades], indent=2),
+            encoding="utf-8",
+        )
+    except (ValidationError, BinanceApiError, ValueError, OSError, KeyError, TypeError) as exc:
+        message = safe_error(exc)
+        if json_output:
+            typer.echo(json.dumps({"error": message, "live_trading_enabled": False}))
+        else:
+            typer.echo(f"SNIPER binance-v2: {message}", err=True)
+        raise typer.Exit(2) from None
+    if json_output:
+        typer.echo(report.model_dump_json(indent=2))
+    else:
+        table = Table(title="SNIPER Binance V2 — Low-cost replay", show_header=False)
+        table.add_column("Field")
+        table.add_column("Value")
+        terminal_symbols = ", ".join(report.symbols).encode(
+            "ascii", errors="backslashreplace"
+        ).decode("ascii")
+        for label, value in (
+            ("Verdict", report.verdict),
+            ("TOP10", terminal_symbols),
+            ("Trades", report.base_metrics.trades),
+            ("Net return", f"{report.base_metrics.net_return_pct}%"),
+            ("Profit factor", report.base_metrics.profit_factor),
+            ("Report", human_path.resolve()),
             ("Order endpoints / LIVE", "ABSENT / DISABLED"),
         ):
             table.add_row(label, str(value))

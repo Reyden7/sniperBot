@@ -238,6 +238,10 @@ def replay_spot(
     scenario: Literal["BASE", "STRESS"],
     start_utc: datetime,
     end_utc: datetime,
+    fee_rates_by_symbol: dict[str, Decimal] | None = None,
+    slippage_pct_by_symbol: dict[str, Decimal] | None = None,
+    maximum_trades_per_day: int = 6,
+    cooldown_minutes: int = 0,
 ) -> tuple[ScenarioMetrics, list[CryptoTrade]]:
     """Replay a single global long-only Spot position with executable sides."""
     slippage_bps = Decimal("1") if scenario == "BASE" else Decimal("3")
@@ -254,7 +258,7 @@ def replay_spot(
     timeline = sorted({timestamp for mapping in bar_maps.values() for timestamp in mapping})
     equity = capital
     equity_curve = [equity]
-    daily = DailyPerformanceEngine()
+    daily = DailyPerformanceEngine(maximum_trades=maximum_trades_per_day)
     risk = BinanceRiskEngine()
     opportunity = OpportunityEngine(EconomicTradeFilter(buffer_pct))
     position: _Position | None = None
@@ -262,16 +266,29 @@ def replay_spot(
     daily_start_equity: dict[date, Decimal] = {}
     daily_realized: dict[date, Decimal] = defaultdict(Decimal)
     rejections: Counter[str] = Counter()
+    last_exit_time: datetime | None = None
+
+    def symbol_fee(symbol: str) -> Decimal:
+        base = (fee_rates_by_symbol or {}).get(symbol, fee_rate)
+        return base if scenario == "BASE" else base * Decimal("1.5")
+
+    def symbol_slippage_per_side(symbol: str) -> Decimal:
+        if slippage_pct_by_symbol is None:
+            return slippage_bps / Decimal(10000)
+        round_trip_pct = slippage_pct_by_symbol.get(symbol, Decimal(0))
+        multiplier = Decimal(1) if scenario == "BASE" else Decimal(3)
+        return round_trip_pct / Decimal(200) * multiplier
 
     def close_position(timestamp: datetime, reference: Decimal, reason: str) -> None:
-        nonlocal position, equity
+        nonlocal position, equity, last_exit_time
         if position is None:
             return
         half_spread = position.spread_bps * spread_multiplier / Decimal(20000)
-        slippage = slippage_bps / Decimal(10000)
+        slippage = symbol_slippage_per_side(position.signal.symbol)
         bid_reference = reference * (Decimal(1) - half_spread)
         exit_executed = bid_reference * (Decimal(1) - slippage)
-        exit_fee = position.quantity * exit_executed * effective_fee
+        effective_symbol_fee = symbol_fee(position.signal.symbol)
+        exit_fee = position.quantity * exit_executed * effective_symbol_fee
         commission = position.entry_fee + exit_fee
         net = position.quantity * (exit_executed - position.entry_executed) - commission
         market_pnl = position.quantity * (reference - position.entry_reference)
@@ -314,6 +331,7 @@ def replay_spot(
         equity_curve.append(equity)
         daily.record(net, commission)
         daily_realized[timestamp.date()] += net
+        last_exit_time = timestamp
         position = None
 
     for timestamp in timeline:
@@ -335,6 +353,11 @@ def replay_spot(
                     close_position(timestamp, _d(bar.close), "TIMEOUT")
         if position is not None or daily.state != DailyState.ACTIVE:
             continue
+        if last_exit_time is not None and timestamp < last_exit_time + timedelta(
+            minutes=cooldown_minutes
+        ):
+            rejections["COOLDOWN_30M"] += 1
+            continue
         raw_candidates: list[tuple[StrategySignal, ResearchBar, Decimal]] = []
         for symbol, mapping in signal_maps.items():
             signal = mapping.get(timestamp)
@@ -345,39 +368,58 @@ def replay_spot(
                 rejections["OPEN_GAP"] += 1
                 continue
             raw_candidates.append((signal, bar, spreads_bps[symbol] * spread_multiplier))
-        ranked = opportunity.rank(
-            raw_candidates,
-            fee_rate=effective_fee,
-            slippage_bps_per_side=slippage_bps,
-        )
-        rejections["ECONOMIC_TRADE_FILTER"] += sum(not item.accepted for item in ranked)
-        accepted = [item for item in ranked if item.accepted]
-        if not accepted:
+        if not raw_candidates:
             continue
-        signal = accepted[0].signal
-        entry_bar = accepted[0].entry_bar
+        if fee_rates_by_symbol is None and slippage_pct_by_symbol is None:
+            ranked = opportunity.rank(
+                raw_candidates,
+                fee_rate=effective_fee,
+                slippage_bps_per_side=slippage_bps,
+            )
+            rejections["ECONOMIC_TRADE_FILTER"] += sum(not item.accepted for item in ranked)
+            accepted = [item for item in ranked if item.accepted]
+            if not accepted:
+                continue
+            signal = accepted[0].signal
+            entry_bar = accepted[0].entry_bar
+        else:
+            raw_candidates.sort(
+                key=lambda item: (
+                    -(
+                        (_d(item[0].target_reference) - _d(item[0].entry_reference))
+                        / _d(item[0].entry_reference)
+                        * Decimal(100)
+                        - item[2] / Decimal(100)
+                        - symbol_slippage_per_side(item[0].symbol) * Decimal(200)
+                        - symbol_fee(item[0].symbol) * Decimal(200)
+                    ),
+                    item[0].symbol,
+                )
+            )
+            signal, entry_bar, _ = raw_candidates[0]
         spread_bps = spreads_bps[signal.symbol]
         half_spread = spread_bps * spread_multiplier / Decimal(20000)
-        slippage = slippage_bps / Decimal(10000)
+        slippage = symbol_slippage_per_side(signal.symbol)
         entry_reference = _d(entry_bar.open)
         entry_executed = entry_reference * (Decimal(1) + half_spread) * (Decimal(1) + slippage)
         stop_distance = _d(signal.entry_reference - signal.invalid_level)
         target_distance = _d(signal.target_reference - signal.entry_reference)
         stop = entry_reference - stop_distance
         target = entry_reference + target_distance
+        effective_symbol_fee = symbol_fee(signal.symbol)
         decision = risk.size(
             equity=equity,
-            available_cash=equity / (Decimal(1) + effective_fee),
+            available_cash=equity / (Decimal(1) + effective_symbol_fee),
             entry_price=entry_executed,
             stop_price=stop,
             rules=rules_by_symbol[signal.symbol],
-            round_trip_fee_rate=effective_fee * Decimal(2),
+            round_trip_fee_rate=effective_symbol_fee * Decimal(2),
             round_trip_slippage_rate=slippage * Decimal(2),
         )
         if not decision.accepted:
             rejections[decision.reason] += 1
             continue
-        entry_fee = decision.quantity * entry_executed * effective_fee
+        entry_fee = decision.quantity * entry_executed * effective_symbol_fee
         position = _Position(
             signal=signal,
             quantity=decision.quantity,

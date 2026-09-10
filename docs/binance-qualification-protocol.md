@@ -15,7 +15,9 @@ Ce document est écrit avant lecture des résultats du replay. Aucun paramètre 
 - L'univers et les spreads de ce snapshot initial sont gelés dans
   `qualification-universe-freeze.json`; une variation ultérieure de profondeur ne peut
   ajouter ou retirer un symbole au replay enregistré.
-- Scanner opérationnel : toutes les paires réellement `TRADING` contre EUR/USDC/USDT.
+- Scanner opérationnel actuel (distinct de l'univers V1 gelé ci-dessus) : paires
+  liquides réellement `TRADING` contre EUR/USDT/USDC/FDUSD, classées sans prix nominal
+  par mouvement/coût net ; aucun fill maker n'est supposé.
 - Capital simulé : 100, 500 et 1000 EUR, indépendant du solde réel.
 - Position simultanée : une seule.
 - Maximum : six trades/jour UTC ; risque normal 0,20 %, plafond 0,35 %.

@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from sniper.config import Model
 
@@ -37,6 +37,54 @@ class FeeSchedule(Model):
     taker_rate: Decimal = Field(ge=0, le=Decimal("0.02"))
     source: Literal["BINANCE_ACCOUNT_API", "ACCOUNT_COMMISSION_RATE", "CONFIGURED_FALLBACK"]
     is_account_specific: bool
+    commission_details: dict[str, Any] = Field(default_factory=dict)
+    special_pricing_visible: bool = False
+
+
+class MakerFillSimulation(Model):
+    """External queue-aware evidence required before treating a maker entry as usable."""
+
+    symbol: str
+    observations: int = Field(ge=0)
+    fill_probability: Decimal = Field(ge=0, le=1)
+    median_time_to_fill_ms: Decimal = Field(ge=0)
+    adverse_selection_pct: Decimal = Field(ge=0)
+    queue_position_modeled: bool
+    post_only_modeled: bool
+
+
+class TradablePairCostProfile(Model):
+    """Comparable Spot-pair economics, independent of a token's nominal price."""
+
+    symbol: str
+    base_asset: str
+    quote_asset: str
+    maker_fee: Decimal = Field(ge=0)
+    taker_fee: Decimal = Field(ge=0)
+    spread_pct: Decimal = Field(ge=0)
+    estimated_slippage_pct: Decimal = Field(ge=0)
+    maker_taker_round_trip_cost_pct: Decimal = Field(ge=0)
+    taker_taker_round_trip_cost_pct: Decimal = Field(ge=0)
+    quote_volume_24h: Decimal = Field(ge=0)
+    depth: Decimal = Field(ge=0)
+    expected_move_pct: Decimal = Field(ge=0)
+    move_to_cost_ratio_maker: Decimal = Field(ge=0)
+    move_to_cost_ratio_taker: Decimal = Field(ge=0)
+    expected_net_edge_taker_pct: Decimal
+    expected_net_edge_maker_pct: Decimal
+    maker_fill_simulation_credible: bool = False
+    preferred_execution_mode: Literal["TAKER_ENTRY_TAKER_EXIT", "MAKER_ENTRY_TAKER_EXIT"] | None = (
+        None
+    )
+    trade_allowed: bool = False
+
+    @property
+    def expected_net_edge_taker(self) -> Decimal:
+        return self.expected_net_edge_taker_pct
+
+    @property
+    def expected_net_edge_maker(self) -> Decimal:
+        return self.expected_net_edge_maker_pct
 
 
 class CanonicalBookTicker(Model):
@@ -97,7 +145,7 @@ class CostEstimate(Model):
     fee_source: str
 
 
-class UniverseCandidate(Model):
+class UniverseCandidate(TradablePairCostProfile):
     symbol: str
     base_asset: str
     quote_asset: str
@@ -110,6 +158,8 @@ class UniverseCandidate(Model):
     fee_source: str
     maker_fee_rate: Decimal
     taker_fee_rate: Decimal
+    commission_details: dict[str, Any] = Field(default_factory=dict)
+    special_pricing_visible: bool = False
     bid: Decimal
     ask: Decimal
     spread_bps: Decimal
@@ -127,6 +177,53 @@ class UniverseCandidate(Model):
     compatible_with_available_balance: bool | None = None
     ranking_components: dict[str, Decimal] = Field(default_factory=dict)
     reasons: tuple[str, ...]
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_cost_profile(cls, value: Any) -> Any:
+        """Read frozen V1 candidates without inventing an executable maker mode."""
+        if not isinstance(value, dict) or "maker_fee" in value:
+            return value
+        migrated = dict(value)
+
+        def decimal(key: str) -> Decimal:
+            return Decimal(str(migrated[key]))
+
+        maker_fee = decimal("maker_fee_rate")
+        taker_fee = decimal("taker_fee_rate")
+        spread_pct = decimal("spread_bps") / Decimal(100)
+        taker_cost = decimal("estimated_cost_pct")
+        slippage_pct = max(taker_cost - spread_pct - taker_fee * Decimal(200), Decimal(0))
+        maker_cost = (
+            spread_pct / Decimal(2)
+            + slippage_pct / Decimal(2)
+            + (maker_fee + taker_fee) * Decimal(100)
+        )
+        expected_move = decimal("expected_gross_move_pct")
+        ratio_floor = Decimal("0.000000000001")
+        migrated.update(
+            {
+                "maker_fee": maker_fee,
+                "taker_fee": taker_fee,
+                "spread_pct": spread_pct,
+                "estimated_slippage_pct": slippage_pct,
+                "maker_taker_round_trip_cost_pct": maker_cost,
+                "taker_taker_round_trip_cost_pct": taker_cost,
+                "depth": min(
+                    decimal("top20_bid_depth_quote"),
+                    decimal("top20_ask_depth_quote"),
+                ),
+                "expected_move_pct": expected_move,
+                "move_to_cost_ratio_maker": expected_move / max(maker_cost, ratio_floor),
+                "move_to_cost_ratio_taker": expected_move / max(taker_cost, ratio_floor),
+                "expected_net_edge_taker_pct": decimal("expected_net_edge_pct"),
+                "expected_net_edge_maker_pct": expected_move - maker_cost,
+                "maker_fill_simulation_credible": False,
+                "preferred_execution_mode": None,
+                "trade_allowed": False,
+            }
+        )
+        return migrated
 
 
 class BinanceCheckReport(Model):

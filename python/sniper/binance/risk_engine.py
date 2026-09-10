@@ -10,6 +10,8 @@ from enum import StrEnum
 from sniper.binance.filters import floor_to_step
 from sniper.binance.models import SymbolRules
 
+TARGET_DAILY_NET_RETURN = Decimal("1.00")
+
 
 class DailyState(StrEnum):
     ACTIVE = "ACTIVE"
@@ -93,7 +95,7 @@ class DailyPerformanceEngine:
     def __init__(
         self,
         *,
-        target_return_pct: Decimal = Decimal("1.00"),
+        target_return_pct: Decimal = TARGET_DAILY_NET_RETURN,
         loss_limit_pct: Decimal = Decimal("-1.00"),
         maximum_trades: int = 6,
         maximum_consecutive_losses: int = 3,

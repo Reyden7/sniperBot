@@ -1,13 +1,22 @@
 """Explicit Binance Spot cost model with account fee provenance."""
 
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from sniper.binance.models import CostEstimate, FeeSchedule
 from sniper.binance.settings import BinanceSettings
 
 ONE_HUNDRED = Decimal(100)
 TEN_THOUSAND = Decimal(10000)
+
+ExecutionMode = Literal["TAKER_ENTRY_TAKER_EXIT", "MAKER_ENTRY_TAKER_EXIT"]
+
+
+@dataclass(frozen=True)
+class PairExecutionCosts:
+    taker_taker: CostEstimate
+    maker_taker: CostEstimate
 
 
 def fallback_fee_schedule(symbol: str, settings: BinanceSettings) -> FeeSchedule:
@@ -46,7 +55,7 @@ def fee_schedule_from_account(symbol: str, payload: dict[str, Any]) -> FeeSchedu
 
 
 class BinanceCostModel:
-    """Estimate round-trip Spot economics; zero fees are structurally rejected."""
+    """Estimate both supported round-trip Spot execution modes."""
 
     def __init__(
         self,
@@ -65,17 +74,44 @@ class BinanceCostModel:
         expected_gross_move_pct: Decimal,
         bid: Decimal,
         ask: Decimal,
-        use_taker: bool = True,
+        use_taker: bool | None = None,
+        execution_mode: ExecutionMode = "TAKER_ENTRY_TAKER_EXIT",
+        estimated_slippage_pct: Decimal | None = None,
+        maker_adverse_selection_pct: Decimal = Decimal(0),
     ) -> CostEstimate:
         if bid <= 0 or ask <= 0 or ask < bid:
             raise ValueError("invalid executable bid/ask")
-        rate = self.fee.taker_rate if use_taker else self.fee.maker_rate
-        entry_fee_pct = rate * ONE_HUNDRED
-        exit_fee_pct = rate * ONE_HUNDRED
+        # Preserve the original boolean call while making its semantics explicit.
+        if use_taker is not None:
+            execution_mode = "TAKER_ENTRY_TAKER_EXIT" if use_taker else "MAKER_ENTRY_TAKER_EXIT"
+        entry_rate = (
+            self.fee.taker_rate
+            if execution_mode == "TAKER_ENTRY_TAKER_EXIT"
+            else self.fee.maker_rate
+        )
+        entry_fee_pct = entry_rate * ONE_HUNDRED
+        exit_fee_pct = self.fee.taker_rate * ONE_HUNDRED
         commission_pct = entry_fee_pct + exit_fee_pct
         midpoint = (ask + bid) / 2
-        spread_pct = (ask - bid) / midpoint * ONE_HUNDRED
-        slippage_pct = 2 * self.slippage_bps_per_side / ONE_HUNDRED
+        full_spread_pct = (ask - bid) / midpoint * ONE_HUNDRED
+        if execution_mode == "TAKER_ENTRY_TAKER_EXIT":
+            spread_pct = full_spread_pct
+            default_slippage_pct = 2 * self.slippage_bps_per_side / ONE_HUNDRED
+            slippage_pct = (
+                default_slippage_pct
+                if estimated_slippage_pct is None
+                else max(estimated_slippage_pct, default_slippage_pct)
+            )
+        else:
+            # A resting entry avoids the entry crossing but the taker exit still crosses
+            # half the quoted spread. Its fill is assessed separately and never assumed.
+            spread_pct = full_spread_pct / 2
+            default_slippage_pct = self.slippage_bps_per_side / ONE_HUNDRED
+            measured_exit_slippage = (
+                None if estimated_slippage_pct is None else estimated_slippage_pct / 2
+            )
+            slippage_pct = max(measured_exit_slippage or Decimal(0), default_slippage_pct)
+            slippage_pct += maker_adverse_selection_pct
         buffer_pct = self.uncertainty_buffer_bps / ONE_HUNDRED
         estimated_cost_pct = spread_pct + slippage_pct + commission_pct
         expected_net = expected_gross_move_pct - estimated_cost_pct
@@ -92,4 +128,31 @@ class BinanceCostModel:
             expected_net_edge_pct=expected_net,
             acceptable=expected_net > buffer_pct,
             fee_source=self.fee.source,
+        )
+
+    def compare_execution_modes(
+        self,
+        *,
+        expected_gross_move_pct: Decimal,
+        bid: Decimal,
+        ask: Decimal,
+        estimated_slippage_pct: Decimal | None = None,
+        maker_adverse_selection_pct: Decimal = Decimal(0),
+    ) -> PairExecutionCosts:
+        return PairExecutionCosts(
+            taker_taker=self.estimate(
+                expected_gross_move_pct=expected_gross_move_pct,
+                bid=bid,
+                ask=ask,
+                execution_mode="TAKER_ENTRY_TAKER_EXIT",
+                estimated_slippage_pct=estimated_slippage_pct,
+            ),
+            maker_taker=self.estimate(
+                expected_gross_move_pct=expected_gross_move_pct,
+                bid=bid,
+                ask=ask,
+                execution_mode="MAKER_ENTRY_TAKER_EXIT",
+                estimated_slippage_pct=estimated_slippage_pct,
+                maker_adverse_selection_pct=maker_adverse_selection_pct,
+            ),
         )

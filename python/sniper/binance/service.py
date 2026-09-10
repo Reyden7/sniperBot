@@ -21,7 +21,7 @@ from sniper.binance.market_data import (
 from sniper.binance.models import BinanceCheckReport, CollectionReport
 from sniper.binance.settings import BinanceSettings
 from sniper.binance.storage import BinanceParquetStore, StorageWrite
-from sniper.binance.universe import CryptoUniverseScanner
+from sniper.binance.universe import LowCostCryptoUniverseScanner
 
 
 def account_permission_status(account: dict[str, Any] | None) -> dict[str, Any]:
@@ -52,7 +52,7 @@ def build_binance_check(
     client.ping()
     server_time = client.server_time()
     local_time = int(datetime.now(UTC).timestamp() * 1000)
-    candidates, quote_assets, account, scan_problems = CryptoUniverseScanner(
+    candidates, quote_assets, account, scan_problems = LowCostCryptoUniverseScanner(
         client, settings
     ).scan()
     problems.extend(scan_problems)
@@ -322,17 +322,21 @@ def render_binance_report(report: BinanceCheckReport) -> str:
         f"- API_KEY_PERMISSION_STATUS: {report.account['API_KEY_PERMISSION_STATUS']}",
         f"- Quote assets dynamically available: {', '.join(report.quote_assets_available)}",
         "",
-        "| Rank | Symbol | Quote | Fee source | Maker | Taker | Min order | "
-        "Spread bps | M5 vol % | Quote vol 24h | Edge proxy % |",
-        "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| Rank | Symbol | Quote | Fee source | Special | Maker | Taker | Spread % | Slip % | "
+        "Cost T/T % | Cost M/T % | Move % | Ratio T/T | Net T/T % | Net M/T % | Mode |",
+        "|---:|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for item in report.symbols:
         lines.append(
             f"| {item.rank} | {item.symbol} | {item.quote_asset} | {item.fee_source} | "
-            f"{item.maker_fee_rate} | {item.taker_fee_rate} | "
-            f"{item.minimum_order_at_ask_quote} | {item.spread_bps:.4f} | "
-            f"{item.realized_volatility_m5_pct:.6f} | {item.quote_volume_24h} | "
-            f"{item.expected_net_edge_pct:.6f} |"
+            f"{item.special_pricing_visible} | {item.maker_fee_rate} | {item.taker_fee_rate} | "
+            f"{item.spread_pct:.6f} | {item.estimated_slippage_pct:.6f} | "
+            f"{item.taker_taker_round_trip_cost_pct:.6f} | "
+            f"{item.maker_taker_round_trip_cost_pct:.6f} | {item.expected_move_pct:.6f} | "
+            f"{item.move_to_cost_ratio_taker:.3f} | "
+            f"{item.expected_net_edge_taker_pct:.6f} | "
+            f"{item.expected_net_edge_maker_pct:.6f} | "
+            f"{item.preferred_execution_mode or 'NO_TRADE'} |"
         )
     lines.extend(["", "## Data quality and problems", ""])
     if report.problems:
@@ -342,8 +346,8 @@ def render_binance_report(report: BinanceCheckReport) -> str:
     lines.extend(
         [
             "",
-            "> `expected_net_edge_pct` is a deterministic M5 volatility proxy for universe "
-            "ranking, not a qualified strategy edge and never an order instruction.",
+            "> Maker edge is informational unless `maker_fill_simulation_credible=true`. "
+            "All edge values use an M5 movement proxy, not a qualified strategy signal.",
             "",
             "No Spot order endpoint is implemented in this delivery. Futures, margin, leverage, "
             "sizing and LIVE remain disabled.",
@@ -372,9 +376,7 @@ def write_first_delivery_summary(
     actual_fee_symbols = [
         item.symbol for item in check.symbols if item.fee_source != "CONFIGURED_FALLBACK"
     ]
-    above_buffer = [
-        item.symbol for item in check.symbols if "EDGE_PROXY_ABOVE_BUFFER" in item.reasons
-    ]
+    above_buffer = [item.symbol for item in check.symbols if item.trade_allowed]
     combined_problems = sorted(set(check.problems) | set(collection.problems))
     scanner_decision = "CANDIDATES_PRESENT" if above_buffer else "SKIP"
     payload = {
@@ -426,17 +428,20 @@ def write_first_delivery_summary(
         "",
         "## Univers réel observé",
         "",
-        "| Rang | Symbole | Quote | Frais source | Maker | Taker | Min ordre quote | "
-        "Spread bps | Vol M5 % | Volume quote 24h | Edge proxy net % |",
-        "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| Rang | Symbole | Quote | Maker | Taker | Spread % | Slippage % | "
+        "Coût T/T % | Move % | Ratio T/T | Edge T/T % | Edge M/T % | Mode |",
+        "|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for item in check.symbols:
         lines.append(
-            f"| {item.rank} | {item.symbol} | {item.quote_asset} | {item.fee_source} | "
-            f"{item.maker_fee_rate} | {item.taker_fee_rate} | "
-            f"{item.minimum_order_at_ask_quote} | {item.spread_bps:.4f} | "
-            f"{item.realized_volatility_m5_pct:.6f} | {item.quote_volume_24h} | "
-            f"{item.expected_net_edge_pct:.6f} |"
+            f"| {item.rank} | {item.symbol} | {item.quote_asset} | "
+            f"{item.maker_fee_rate} | {item.taker_fee_rate} | {item.spread_pct:.6f} | "
+            f"{item.estimated_slippage_pct:.6f} | "
+            f"{item.taker_taker_round_trip_cost_pct:.6f} | {item.expected_move_pct:.6f} | "
+            f"{item.move_to_cost_ratio_taker:.3f} | "
+            f"{item.expected_net_edge_taker_pct:.6f} | "
+            f"{item.expected_net_edge_maker_pct:.6f} | "
+            f"{item.preferred_execution_mode or 'NO_TRADE'} |"
         )
     lines.extend(
         [

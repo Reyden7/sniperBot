@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -31,9 +32,9 @@ def collect_historical_m1(
     end_ms = _epoch_ms(end_utc)
     if end_ms <= start_ms:
         raise ValueError("historical end must be after start")
-    store = BinanceParquetStore(data_root)
-    counts: dict[str, int] = {}
-    for symbol in symbols:
+
+    def collect_symbol(symbol: str) -> tuple[str, int]:
+        store = BinanceParquetStore(data_root)
         cursor = start_ms
         accepted = 0
         while cursor < end_ms:
@@ -82,8 +83,13 @@ def collect_historical_m1(
             cursor = next_cursor
             if len(payload) < 1000:
                 break
-        counts[symbol] = accepted
-    return counts
+        return symbol, accepted
+
+    # Public klines are independent per symbol. Four bounded workers keep collection
+    # practical while remaining far below Binance Spot request-weight limits.
+    with ThreadPoolExecutor(max_workers=min(4, max(len(symbols), 1))) as executor:
+        results = executor.map(collect_symbol, symbols)
+        return dict(results)
 
 
 def load_historical_m1(
@@ -97,14 +103,29 @@ def load_historical_m1(
     paths = sorted(root.glob("date=*/part-*.parquet"))
     if not paths:
         raise ValueError("no Binance historical M1 Parquet data found")
-    return (
-        pl.scan_parquet(paths)
+    decimal_columns = (
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "quote_volume",
+        "taker_buy_base_volume",
+        "taker_buy_quote_volume",
+    )
+    scans = [
+        pl.scan_parquet(path)
         .filter(
             pl.col("symbol").is_in(symbols)
             & (pl.col("timestamp_utc") >= start_utc)
             & (pl.col("timestamp_utc") < end_utc)
             & pl.col("closed")
         )
+        .with_columns(pl.col(column).cast(pl.Float64) for column in decimal_columns)
+        for path in paths
+    ]
+    return (
+        pl.concat(scans, how="vertical_relaxed")
         .unique(subset=["symbol", "timestamp_utc"], keep="last")
         .sort(["timestamp_utc", "symbol"])
         .collect()
