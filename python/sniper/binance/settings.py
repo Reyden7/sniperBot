@@ -16,6 +16,9 @@ class BinanceSettings(BaseSettings):
         "READ_ONLY", validation_alias="TRADING_MODE"
     )
     live_trading_enabled: bool = Field(False, validation_alias="LIVE_TRADING_ENABLED")
+    internal_execution_permission: bool = Field(
+        False, validation_alias="INTERNAL_EXECUTION_PERMISSION"
+    )
     api_key: SecretStr | None = Field(None, validation_alias="BINANCE_API_KEY")
     api_secret: SecretStr | None = Field(None, validation_alias="BINANCE_API_SECRET")
     rest_base_url: str = Field("https://api.binance.com", validation_alias="BINANCE_REST_BASE_URL")
@@ -121,7 +124,11 @@ class BinanceSettings(BaseSettings):
     def fail_closed(self) -> Self:
         if (self.api_key is None) != (self.api_secret is None):
             raise ValueError("BINANCE_API_KEY and BINANCE_API_SECRET must be provided together")
-        if self.trading_mode == "LIVE" or self.live_trading_enabled:
+        if (
+            self.trading_mode == "LIVE"
+            or self.live_trading_enabled
+            or self.internal_execution_permission
+        ):
             raise ValueError("LIVE trading is unavailable in the first Binance delivery")
         if not self.rest_base_url.startswith("https://"):
             raise ValueError("BINANCE_REST_BASE_URL must use HTTPS")

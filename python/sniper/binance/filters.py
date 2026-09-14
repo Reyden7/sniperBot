@@ -26,6 +26,11 @@ def _active_market_lot(
 
 def parse_symbol_rules(symbol: dict[str, Any]) -> SymbolRules:
     """Parse all required filters from one live ``exchangeInfo`` symbol."""
+    raw_symbol = str(symbol["symbol"])
+    base_asset = str(symbol["baseAsset"])
+    quote_asset = str(symbol["quoteAsset"])
+    if raw_symbol != base_asset + quote_asset:
+        raise BinanceFilterError("symbol does not match baseAsset + quoteAsset")
     filters = {item["filterType"]: item for item in symbol.get("filters", [])}
     missing = {"PRICE_FILTER", "LOT_SIZE"} - filters.keys()
     if missing:
@@ -43,10 +48,10 @@ def parse_symbol_rules(symbol: dict[str, Any]) -> SymbolRules:
             sorted({str(item) for permission_set in permission_sets for item in permission_set})
         )
     return SymbolRules(
-        symbol=str(symbol["symbol"]),
+        symbol=raw_symbol,
         status=str(symbol.get("status", "UNKNOWN")),
-        base_asset=str(symbol["baseAsset"]),
-        quote_asset=str(symbol["quoteAsset"]),
+        base_asset=base_asset,
+        quote_asset=quote_asset,
         spot_trading_allowed=bool(symbol.get("isSpotTradingAllowed", "SPOT" in permissions)),
         permissions=permissions,
         order_types=tuple(str(item) for item in symbol.get("orderTypes", [])),
@@ -62,6 +67,16 @@ def parse_symbol_rules(symbol: dict[str, Any]) -> SymbolRules:
         minimum_notional=minimum_notional,
         maximum_notional=maximum_notional_raw if maximum_notional_raw > 0 else None,
         filters_raw=tuple(dict(item) for item in symbol.get("filters", [])),
+    )
+
+
+def operational_symbol_is_unambiguous(rules: SymbolRules) -> bool:
+    """Require an exact ASCII exchange identity for automated file/CLI workflows."""
+    return bool(
+        rules.symbol == rules.base_asset + rules.quote_asset
+        and rules.symbol.isascii()
+        and rules.symbol.isalnum()
+        and rules.symbol.upper() == rules.symbol
     )
 
 

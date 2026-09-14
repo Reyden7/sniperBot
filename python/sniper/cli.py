@@ -21,6 +21,7 @@ from sniper.backtest.execution_model import (
 )
 from sniper.backtest.slippage import FixedSlippage, NoSlippage, RandomSlippage, SlippageModel
 from sniper.binance.client import BinanceApiError, BinanceReadOnlyClient
+from sniper.binance.forward_paper import ForwardPaperRunner, read_forward_paper_status
 from sniper.binance.models import UniverseCandidate
 from sniper.binance.second_delivery import render_second_delivery, run_second_delivery
 from sniper.binance.service import (
@@ -31,6 +32,7 @@ from sniper.binance.service import (
 from sniper.binance.settings import BinanceSettings
 from sniper.binance.universe import LowCostCryptoUniverseScanner
 from sniper.binance.v2_delivery import render_binance_v2, run_binance_v2
+from sniper.binance.v3_delivery import run_binance_v3
 from sniper.config import BrokerCheckConfig, Settings
 from sniper.data.backtest_source import load_parquet_ticks
 from sniper.data.collector import DataQualityReport, collect_ticks
@@ -1212,9 +1214,9 @@ def binance_v2_command(
         table = Table(title="SNIPER Binance V2 — Low-cost replay", show_header=False)
         table.add_column("Field")
         table.add_column("Value")
-        terminal_symbols = ", ".join(report.symbols).encode(
-            "ascii", errors="backslashreplace"
-        ).decode("ascii")
+        terminal_symbols = (
+            ", ".join(report.symbols).encode("ascii", errors="backslashreplace").decode("ascii")
+        )
         for label, value in (
             ("Verdict", report.verdict),
             ("TOP10", terminal_symbols),
@@ -1226,6 +1228,118 @@ def binance_v2_command(
         ):
             table.add_row(label, str(value))
         Console(markup=False).print(table)
+
+
+@app.command("binance-v3")
+def binance_v3_command(
+    data: Annotated[Path, typer.Option(help="Racine des données SNIPER.")] = Path("data"),
+    start: Annotated[str, typer.Option(help="Début développement UTC.")] = ("2026-06-10T00:00:00Z"),
+    validation_start: Annotated[str, typer.Option(help="Début validation UTC.")] = (
+        "2026-08-09T00:00:00Z"
+    ),
+    end: Annotated[str, typer.Option(help="Fin validation UTC exclusive.")] = (
+        "2026-09-08T00:00:00Z"
+    ),
+    collect_history: Annotated[bool, typer.Option("--collect-history/--existing-history")] = True,
+) -> None:
+    """Tester la force relative cross-sectionnelle V3, sans aucune route d'ordre."""
+    try:
+        settings = BinanceSettings()
+        report, trades = run_binance_v3(
+            client=BinanceReadOnlyClient(settings),
+            settings=settings,
+            data_root=data,
+            start_utc=parse_instant(start),
+            validation_start_utc=parse_instant(validation_start),
+            end_utc=parse_instant(end),
+            collect_history=collect_history,
+            progress=lambda message: typer.echo(message, err=True),
+        )
+        report_dir = data / "binance" / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        json_path = report_dir / "binance-v3-final.json"
+        trades_path = data / "binance" / "backtests" / "binance-v3-primary-trades.json"
+        trades_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        trades_path.write_text(
+            json.dumps([trade.model_dump(mode="json") for trade in trades], indent=2),
+            encoding="utf-8",
+        )
+    except (ValidationError, BinanceApiError, ValueError, OSError, KeyError, TypeError) as exc:
+        typer.echo(f"SNIPER binance-v3: {safe_error(exc)}", err=True)
+        raise typer.Exit(2) from None
+    metrics = report.primary_metrics
+    table = Table(title="SNIPER Binance V3 — Cross-sectional validation", show_header=False)
+    table.add_column("Field")
+    table.add_column("Value")
+    for label, value in (
+        ("Verdict", report.verdict),
+        (
+            "Universe frozen / eligible",
+            f"{len(report.frozen_universe)} / {len(report.eligible_history_universe)}",
+        ),
+        ("Primary", report.primary_configuration),
+        ("Trades", metrics.trades),
+        ("Gross PnL", metrics.gross_market_pnl),
+        ("Net return", f"{metrics.net_return_pct}%"),
+        ("Profit factor", metrics.profit_factor),
+        ("Report", json_path.resolve()),
+        ("Order endpoints / LIVE", "ABSENT / DISABLED"),
+    ):
+        table.add_row(label, str(value))
+    Console(markup=False).print(table)
+
+
+@app.command("binance-paper-v3-start")
+def binance_paper_v3_start_command(
+    data: Annotated[Path, typer.Option(help="Racine des données SNIPER.")] = Path("data"),
+    cycle_seconds: Annotated[
+        float, typer.Option(help="Durée de chaque fenêtre WebSocket réelle.")
+    ] = 60.0,
+) -> None:
+    """Démarrer le forward paper gelé TOP3_RS_2H au premier plan."""
+    try:
+        settings = BinanceSettings()
+        runner = ForwardPaperRunner(
+            BinanceReadOnlyClient(settings),
+            settings,
+            data,
+            cycle_seconds=cycle_seconds,
+            progress=lambda message: typer.echo(message, err=True),
+        )
+        runner.run_forever()
+    except (ValidationError, BinanceApiError, ValueError, OSError, KeyError, TypeError) as exc:
+        typer.echo(f"SNIPER binance-paper-v3-start: {safe_error(exc)}", err=True)
+        raise typer.Exit(2) from None
+
+
+@app.command("binance-paper-v3-status")
+def binance_paper_v3_status_command(
+    data: Annotated[Path, typer.Option(help="Racine des données SNIPER.")] = Path("data"),
+) -> None:
+    """Afficher l'état persistant du forward paper V3."""
+    try:
+        status = read_forward_paper_status(data)
+    except (ValidationError, ValueError, OSError) as exc:
+        typer.echo(f"SNIPER binance-paper-v3-status: {safe_error(exc)}", err=True)
+        raise typer.Exit(2) from None
+    table = Table(title="SNIPER Binance V3 — Forward paper", show_header=False)
+    table.add_column("Field")
+    table.add_column("Value")
+    for label, value in (
+        ("Running / PID", f"{status.running} / {status.pid}"),
+        ("Configuration", status.configuration),
+        ("Started UTC", status.started_at_utc),
+        ("Calendar days / trades", f"{status.calendar_days} / {status.trades}"),
+        ("Equity / return", f"{status.ending_equity} / {status.net_return_pct}%"),
+        ("Net expectancy / PF", f"{status.net_expectancy} / {status.profit_factor}"),
+        ("Max drawdown", f"{status.max_drawdown_pct}%"),
+        ("Open position", status.position.symbol if status.position else "NONE"),
+        ("Verdict", status.verdict),
+        ("LIVE / internal execution", "DISABLED / DISABLED"),
+    ):
+        table.add_row(str(label), str(value))
+    Console(markup=False).print(table)
 
 
 def print_backtest_report(result: BacktestResult) -> None:

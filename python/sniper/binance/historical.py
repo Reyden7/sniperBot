@@ -85,9 +85,9 @@ def collect_historical_m1(
                 break
         return symbol, accepted
 
-    # Public klines are independent per symbol. Four bounded workers keep collection
+    # Public klines are independent per symbol. Eight bounded workers keep collection
     # practical while remaining far below Binance Spot request-weight limits.
-    with ThreadPoolExecutor(max_workers=min(4, max(len(symbols), 1))) as executor:
+    with ThreadPoolExecutor(max_workers=min(8, max(len(symbols), 1))) as executor:
         results = executor.map(collect_symbol, symbols)
         return dict(results)
 
@@ -113,8 +113,13 @@ def load_historical_m1(
         "taker_buy_base_volume",
         "taker_buy_quote_volume",
     )
+    paths_by_decimal_schema: dict[tuple[str, ...], list[Path]] = {}
+    for path in paths:
+        schema = pl.read_parquet_schema(path)
+        signature = tuple(str(schema[column]) for column in decimal_columns)
+        paths_by_decimal_schema.setdefault(signature, []).append(path)
     scans = [
-        pl.scan_parquet(path)
+        pl.scan_parquet(schema_paths)
         .filter(
             pl.col("symbol").is_in(symbols)
             & (pl.col("timestamp_utc") >= start_utc)
@@ -122,7 +127,7 @@ def load_historical_m1(
             & pl.col("closed")
         )
         .with_columns(pl.col(column).cast(pl.Float64) for column in decimal_columns)
-        for path in paths
+        for schema_paths in paths_by_decimal_schema.values()
     ]
     return (
         pl.concat(scans, how="vertical_relaxed")

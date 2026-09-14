@@ -146,7 +146,7 @@ def collect_binance_market_data(
     problems: list[str] = []
     books = {item["symbol"]: item for item in client.book_tickers()}
     for symbol in symbols:
-        for interval in ("1m", "5m", "15m"):
+        for interval in ("1m", "5m", "15m", "1h"):
             rows = client.klines(symbol, interval, kline_limit)
             for row in rows:
                 raw_rest.append(

@@ -68,7 +68,7 @@ def normalize_rest_agg_trade(symbol: str, payload: dict[str, Any]) -> CanonicalA
 def normalize_kline(payload: dict[str, Any]) -> CanonicalKline:
     kline = payload["k"]
     interval = str(kline["i"])
-    if interval not in {"1m", "5m", "15m"}:
+    if interval not in {"1m", "5m", "15m", "1h"}:
         raise ValueError("unsupported kline interval")
     return CanonicalKline(
         symbol=str(payload["s"]),
@@ -89,7 +89,7 @@ def normalize_kline(payload: dict[str, Any]) -> CanonicalKline:
 
 
 def normalize_rest_kline(symbol: str, interval: str, row: list[Any]) -> CanonicalKline:
-    if interval not in {"1m", "5m", "15m"}:
+    if interval not in {"1m", "5m", "15m", "1h"}:
         raise ValueError("unsupported kline interval")
     return CanonicalKline(
         symbol=symbol,
@@ -131,6 +131,7 @@ def combined_stream_url(ws_base_url: str, symbols: Iterable[str]) -> str:
                 f"{lower}@kline_1m",
                 f"{lower}@kline_5m",
                 f"{lower}@kline_15m",
+                f"{lower}@kline_1h",
             ]
         )
     if not streams:

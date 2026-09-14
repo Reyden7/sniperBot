@@ -117,7 +117,7 @@ class CanonicalKline(Model):
     symbol: str
     timestamp_utc: datetime
     close_time_utc: datetime
-    interval: Literal["1m", "5m", "15m"]
+    interval: Literal["1m", "5m", "15m", "1h"]
     open: Decimal = Field(gt=0)
     high: Decimal = Field(gt=0)
     low: Decimal = Field(gt=0)

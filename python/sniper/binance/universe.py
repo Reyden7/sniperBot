@@ -14,7 +14,12 @@ from sniper.binance.costs import (
     fee_schedule_from_account,
     fee_schedules_from_trade_fee,
 )
-from sniper.binance.filters import BinanceFilterError, minimum_order_quantity, parse_symbol_rules
+from sniper.binance.filters import (
+    BinanceFilterError,
+    minimum_order_quantity,
+    operational_symbol_is_unambiguous,
+    parse_symbol_rules,
+)
 from sniper.binance.models import FeeSchedule, MakerFillSimulation, UniverseCandidate
 from sniper.binance.settings import BinanceSettings
 
@@ -219,6 +224,11 @@ class LowCostCryptoUniverseScanner:
             try:
                 rules = parse_symbol_rules(raw_symbol)
             except BinanceFilterError, KeyError, ValueError:
+                continue
+            if not operational_symbol_is_unambiguous(rules):
+                problems.append(
+                    f"AMBIGUOUS_SYMBOL_EXCLUDED:{rules.symbol.encode('unicode_escape').decode()}"
+                )
                 continue
             if (
                 rules.quote_asset in self.settings.eligible_quote_assets

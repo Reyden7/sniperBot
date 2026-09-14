@@ -11,8 +11,10 @@ from sniper.binance.costs import (
     fee_schedules_from_trade_fee,
 )
 from sniper.binance.filters import (
+    BinanceFilterError,
     floor_to_step,
     minimum_order_quantity,
+    operational_symbol_is_unambiguous,
     parse_symbol_rules,
     validate_order,
 )
@@ -107,6 +109,17 @@ def test_dynamic_filters_round_quantity_and_enforce_notional():
     )
     assert valid is False
     assert "BELOW_MINIMUM_NOTIONAL" in reasons
+
+
+def test_symbol_identity_rejects_typos_and_non_ascii_is_operationally_ambiguous():
+    with pytest.raises(BinanceFilterError, match="baseAsset"):
+        parse_symbol_rules(symbol_payload("WLDUSDTT", "WLD", "USDT"))
+    assert operational_symbol_is_unambiguous(
+        parse_symbol_rules(symbol_payload("WLDUSDT", "WLD", "USDT"))
+    )
+    assert not operational_symbol_is_unambiguous(
+        parse_symbol_rules(symbol_payload("牛来USDT", "牛来", "USDT"))
+    )
 
 
 def test_binance_cost_model_uses_spread_two_fees_and_two_sided_slippage():
